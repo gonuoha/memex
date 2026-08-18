@@ -58,8 +58,14 @@ const COLLECTION_SORT_LABELS: Record<FavoriteCollectionSortField, string> = {
   "name-desc": "Name Z-A",
 };
 
-const FAVORITES_ROW_GRID =
-  "sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_7rem_4.5rem] sm:items-center sm:gap-4";
+const FAVORITES_ROW_LAYOUT =
+  "flex items-center gap-2 sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_7rem_4.5rem] sm:items-center sm:gap-4";
+
+const FAVORITES_TABLE_HEADER =
+  "hidden sm:grid sm:grid-cols-[minmax(0,1fr)_7rem_7rem_4.5rem] sm:items-center sm:gap-4";
+
+const FAVORITES_ROW_SURFACE =
+  "odd:bg-card even:bg-muted/30 hover:bg-muted/50";
 
 function TypeBadge({
   label,
@@ -96,8 +102,8 @@ function FavoritesTableBody({
     <>
       <div
         className={cn(
-          "hidden border-t border-border/60 bg-muted/30 px-4 py-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase",
-          FAVORITES_ROW_GRID,
+          "border-t border-border/60 bg-muted/30 px-4 py-2 text-xs font-medium tracking-wide text-muted-foreground uppercase",
+          FAVORITES_TABLE_HEADER,
         )}
       >
         {columns.map((column) => (
@@ -112,9 +118,7 @@ function FavoritesTableBody({
           </span>
         ))}
       </div>
-      <div className="divide-y divide-border/60 border-t border-border/60">
-        {children}
-      </div>
+      <div className="border-t border-border/60">{children}</div>
     </>
   );
 }
@@ -124,7 +128,6 @@ function FavoritesCollapsibleSection({
   icon,
   title,
   count,
-  subtitle,
   sortControl,
   children,
 }: {
@@ -132,7 +135,6 @@ function FavoritesCollapsibleSection({
   icon: React.ReactNode;
   title: string;
   count: number;
-  subtitle: string;
   sortControl: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -159,7 +161,6 @@ function FavoritesCollapsibleSection({
                 {count}
               </Badge>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
           </div>
           <ChevronDown
             className={cn(
@@ -204,50 +205,35 @@ function FavoriteItemRow({ item }: FavoriteItemRowProps) {
         }
       }}
       className={cn(
-        "group grid w-full cursor-pointer grid-cols-1 gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/40",
-        FAVORITES_ROW_GRID,
+        "group w-full cursor-pointer px-4 py-2 text-left transition-colors",
+        FAVORITES_ROW_LAYOUT,
+        FAVORITES_ROW_SURFACE,
       )}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <div
           className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-lg",
+            "flex size-7 shrink-0 items-center justify-center rounded-md",
             typeStyles.bgClassName,
             typeStyles.textClassName,
             !item.type.color && "bg-muted text-muted-foreground",
           )}
           style={{ ...typeStyles.bgStyle, ...typeStyles.textStyle }}
         >
-          {createElement(TypeIcon, { className: "size-4" })}
+          {createElement(TypeIcon, { className: "size-3.5" })}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium">{item.title}</span>
-            {item.isPinned ? (
-              <Pin
-                className="size-3.5 shrink-0 text-muted-foreground"
-                aria-label="Pinned"
-              />
-            ) : null}
-          </div>
-          {item.description ? (
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">
-              {item.description}
-            </p>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="truncate text-sm font-medium">{item.title}</span>
+          {item.isPinned ? (
+            <Pin
+              className="size-3 shrink-0 text-muted-foreground"
+              aria-label="Pinned"
+            />
           ) : null}
-          <div className="mt-2 flex items-center gap-2 sm:hidden">
-            <TypeBadge label={getItemTypeLabel(item.type.name)} color={item.type.color} />
-            <time
-              dateTime={item.updatedAt.toISOString()}
-              className="text-xs text-muted-foreground tabular-nums"
-            >
-              {formatShortDateWithYear(item.updatedAt)}
-            </time>
-          </div>
         </div>
       </div>
 
-      <div className="hidden sm:block">
+      <div className="shrink-0">
         <TypeBadge label={getItemTypeLabel(item.type.name)} color={item.type.color} />
       </div>
 
@@ -258,13 +244,13 @@ function FavoriteItemRow({ item }: FavoriteItemRowProps) {
         {formatShortDateWithYear(item.updatedAt)}
       </time>
 
-      <div className="flex items-center justify-end gap-1">
+      <div className="flex shrink-0 items-center justify-end gap-1">
         <ItemFavoriteButton
           key={`${item.id}-${item.isFavorite}`}
           itemId={item.id}
           isFavorite={item.isFavorite}
         />
-        <ChevronRight className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        <ChevronRight className="hidden size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
       </div>
     </div>
   );
@@ -289,29 +275,21 @@ function FavoriteCollectionRow({ collection }: FavoriteCollectionRowProps) {
         }
       }}
       className={cn(
-        "group grid w-full cursor-pointer grid-cols-1 gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40",
-        FAVORITES_ROW_GRID,
+        "group w-full cursor-pointer px-4 py-2 transition-colors",
+        FAVORITES_ROW_LAYOUT,
+        FAVORITES_ROW_SURFACE,
       )}
     >
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <FolderOpen className="size-4" />
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <FolderOpen className="size-3.5" />
         </div>
-        <div className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{collection.name}</span>
-          <div className="mt-2 flex items-center gap-2 sm:hidden">
-            <TypeBadge label="Collection" />
-            <time
-              dateTime={collection.updatedAt.toISOString()}
-              className="text-xs text-muted-foreground tabular-nums"
-            >
-              {formatShortDateWithYear(collection.updatedAt)}
-            </time>
-          </div>
-        </div>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {collection.name}
+        </span>
       </div>
 
-      <div className="hidden sm:block">
+      <div className="shrink-0">
         <TypeBadge label="Collection" />
       </div>
 
@@ -322,13 +300,13 @@ function FavoriteCollectionRow({ collection }: FavoriteCollectionRowProps) {
         {formatShortDateWithYear(collection.updatedAt)}
       </time>
 
-      <div className="flex items-center justify-end gap-1">
+      <div className="flex shrink-0 items-center justify-end gap-1">
         <CollectionFavoriteButton
           collectionId={collection.id}
           isFavorite
           variant="icon"
         />
-        <ChevronRight className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        <ChevronRight className="hidden size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
       </div>
     </div>
   );
@@ -437,7 +415,6 @@ export function FavoritesList({ items, collections }: FavoritesListProps) {
           icon={<Star className="size-4 fill-favorite text-favorite" />}
           title="Items"
           count={sortedItems.length}
-          subtitle="Starred knowledge across your workspace"
           sortControl={
             <FavoritesSortControl
               id="favorites-item-sort"
@@ -462,7 +439,6 @@ export function FavoritesList({ items, collections }: FavoritesListProps) {
           icon={<FolderOpen className="size-4 text-primary" />}
           title="Collections"
           count={sortedCollections.length}
-          subtitle="Organized groups you return to often"
           sortControl={
             <FavoritesSortControl
               id="favorites-collection-sort"
