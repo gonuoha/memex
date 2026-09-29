@@ -296,6 +296,15 @@ volumes:
 ];
 
 async function main() {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.ALLOW_PRODUCTION_SEED !== "true"
+  ) {
+    throw new Error(
+      "Refusing to seed production database. Set ALLOW_PRODUCTION_SEED=true to override.",
+    );
+  }
+
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {

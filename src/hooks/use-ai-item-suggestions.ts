@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { generateAutoTags, generateSummary } from "@/actions/ai";
@@ -49,10 +49,10 @@ export function useAiItemSuggestions({
     summaryContentInput,
   );
 
-  function resetSuggestions() {
+  const resetSuggestions = useCallback(() => {
     setSuggestedTags([]);
     setSuggestedSummary(null);
-  }
+  }, []);
 
   function handleGenerateSummary() {
     startSummarizing(async () => {

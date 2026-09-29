@@ -19,6 +19,9 @@ export type SettingsData = {
     hasPassword: boolean;
     isPro: boolean;
     stripeCustomerId: string | null;
+    subscriptionStatus: string | null;
+    currentPeriodEnd: Date | null;
+    cancelAtPeriodEnd: boolean;
   };
   usage: {
     itemCount: number;
@@ -65,6 +68,9 @@ export const getSettingsData = cache(async (): Promise<SettingsData> => {
         password: true,
         isPro: true,
         stripeCustomerId: true,
+        subscriptionStatus: true,
+        currentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
         editorPreferences: true,
         userPreferences: true,
       },
@@ -82,6 +88,9 @@ export const getSettingsData = cache(async (): Promise<SettingsData> => {
       hasPassword: Boolean(user.password),
       isPro: user.isPro,
       stripeCustomerId: user.stripeCustomerId,
+      subscriptionStatus: user.subscriptionStatus,
+      currentPeriodEnd: user.currentPeriodEnd,
+      cancelAtPeriodEnd: user.cancelAtPeriodEnd,
     },
     usage: {
       itemCount: stats.itemCount,

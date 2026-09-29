@@ -21,33 +21,47 @@ const CONFIRMATION_PHRASE = "DELETE";
 
 type DeleteAccountButtonProps = {
   className?: string;
+  hasPassword: boolean;
 };
 
-export function DeleteAccountButton({ className }: DeleteAccountButtonProps) {
+export function DeleteAccountButton({
+  className,
+  hasPassword,
+}: DeleteAccountButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
+  const [password, setPassword] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
   const isConfirmed = confirmation === CONFIRMATION_PHRASE;
+  const canDelete = isConfirmed && (!hasPassword || password.length > 0);
 
   function handleOpenChange(open: boolean) {
     setIsOpen(open);
 
     if (!open) {
       setConfirmation("");
+      setPassword("");
       setIsDeleting(false);
     }
   }
 
   async function handleDelete() {
-    if (!isConfirmed) {
+    if (!canDelete) {
       return;
     }
 
     setIsDeleting(true);
 
     try {
-      const response = await fetch("/api/auth/account", { method: "DELETE" });
+      const response = await fetch("/api/auth/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation: CONFIRMATION_PHRASE,
+          ...(hasPassword ? { password } : {}),
+        }),
+      });
 
       if (!response.ok) {
         const data = (await response.json()) as { error?: string };
@@ -86,6 +100,20 @@ export function DeleteAccountButton({ className }: DeleteAccountButtonProps) {
           </DialogHeader>
 
           <div className="space-y-4">
+            {hasPassword ? (
+              <div className="space-y-2">
+                <Label htmlFor="deleteAccountPassword">Current password</Label>
+                <Input
+                  id="deleteAccountPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={isDeleting}
+                />
+              </div>
+            ) : null}
+
             <div className="space-y-2">
               <Label htmlFor="deleteConfirmation">
                 Type <span className="font-mono font-medium">{CONFIRMATION_PHRASE}</span> to
@@ -107,7 +135,7 @@ export function DeleteAccountButton({ className }: DeleteAccountButtonProps) {
                 variant="destructive"
                 className="flex-1"
                 onClick={() => void handleDelete()}
-                disabled={!isConfirmed || isDeleting}
+                disabled={!canDelete || isDeleting}
               >
                 {isDeleting ? "Deleting..." : "Yes, delete my account"}
               </Button>

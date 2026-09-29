@@ -16,13 +16,29 @@ import {
 type BillingCardProps = {
   isPro: boolean;
   stripeCustomerId: string | null;
+  subscriptionStatus: string | null;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
   itemCount: number;
   collectionCount: number;
 };
 
+function formatBillingDate(date: Date | null): string | null {
+  if (!date) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+  }).format(date);
+}
+
 export function BillingCard({
   isPro,
   stripeCustomerId,
+  subscriptionStatus,
+  currentPeriodEnd,
+  cancelAtPeriodEnd,
   itemCount,
   collectionCount,
 }: BillingCardProps) {
@@ -66,6 +82,8 @@ export function BillingCard({
       setIsLoading(false);
     }
   }
+
+  const renewalDate = formatBillingDate(currentPeriodEnd);
 
   return (
     <PageSection
@@ -118,14 +136,38 @@ export function BillingCard({
           </Button>
         </>
       ) : (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleManageSubscription}
-          disabled={isLoading || !stripeCustomerId}
-        >
-          {isLoading ? "Opening..." : "Manage subscription"}
-        </Button>
+        <div className="space-y-4">
+          {subscriptionStatus === "past_due" ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              Your last payment failed. Update your payment method in the billing
+              portal to keep Pro access.
+            </div>
+          ) : null}
+
+          {renewalDate ? (
+            <p className="text-sm text-muted-foreground">
+              {cancelAtPeriodEnd
+                ? `Access ends on ${renewalDate}.`
+                : `Renews on ${renewalDate}.`}
+            </p>
+          ) : null}
+
+          {cancelAtPeriodEnd ? (
+            <p className="text-sm text-muted-foreground">
+              Your subscription is set to cancel at the end of the current
+              billing period.
+            </p>
+          ) : null}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleManageSubscription}
+            disabled={isLoading || !stripeCustomerId}
+          >
+            {isLoading ? "Opening..." : "Manage subscription"}
+          </Button>
+        </div>
       )}
     </PageSection>
   );

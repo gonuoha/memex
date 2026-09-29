@@ -28,6 +28,8 @@ export default async function ProfilePage() {
         <UsageStatisticsCard
           itemCount={stats.itemCount}
           collectionCount={stats.collectionCount}
+          storageUsedBytes={stats.storageUsedBytes}
+          storageQuotaBytes={stats.storageQuotaBytes}
           itemTypeCounts={itemTypeCounts}
           isPro={user.isPro}
         />

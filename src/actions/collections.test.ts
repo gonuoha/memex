@@ -20,6 +20,19 @@ vi.mock("@/lib/db/user", () => ({
   getUserIsPro: vi.fn(),
 }));
 
+vi.mock("@/lib/db/free-tier-limits", () => ({
+  FreeTierLimitExceededError: class FreeTierLimitExceededError extends Error {
+    readonly kind: "item" | "collection";
+
+    constructor(kind: "item" | "collection") {
+      super(`Free tier ${kind} limit exceeded`);
+      this.name = "FreeTierLimitExceededError";
+      this.kind = kind;
+    }
+  },
+  runWithFreeTierCollectionGuard: vi.fn(),
+}));
+
 import {
   createCollection as createCollectionInDb,
   deleteCollection as deleteCollectionInDb,
@@ -27,6 +40,10 @@ import {
   updateCollection as updateCollectionInDb,
 } from "@/lib/db/collections";
 import { getUserItemStats } from "@/lib/db/items";
+import {
+  FreeTierLimitExceededError,
+  runWithFreeTierCollectionGuard,
+} from "@/lib/db/free-tier-limits";
 import { getUserIsPro } from "@/lib/db/user";
 
 import {
@@ -42,6 +59,7 @@ const mockDeleteCollectionInDb = vi.mocked(deleteCollectionInDb);
 const mockToggleCollectionFavoriteInDb = vi.mocked(toggleCollectionFavoriteInDb);
 const mockGetUserItemStats = vi.mocked(getUserItemStats);
 const mockGetUserIsPro = vi.mocked(getUserIsPro);
+const mockRunWithFreeTierCollectionGuard = vi.mocked(runWithFreeTierCollectionGuard);
 
 const createdCollection: CreatedCollection = {
   id: "collection-1",
@@ -55,6 +73,9 @@ describe("createCollection", () => {
     vi.clearAllMocks();
     mockGetUserIsPro.mockResolvedValue(false);
     mockGetUserItemStats.mockResolvedValue(defaultStats);
+    mockRunWithFreeTierCollectionGuard.mockImplementation(
+      async (_userId, _isPro, create) => create({} as never),
+    );
   });
 
   it("returns unauthorized when there is no session", async () => {
@@ -91,10 +112,14 @@ describe("createCollection", () => {
     });
 
     expect(result).toEqual({ success: true, data: createdCollection });
-    expect(mockCreateCollectionInDb).toHaveBeenCalledWith("user-1", {
-      name: "My Collection",
-      description: "A useful collection",
-    });
+    expect(mockCreateCollectionInDb).toHaveBeenCalledWith(
+      "user-1",
+      {
+        name: "My Collection",
+        description: "A useful collection",
+      },
+      {},
+    );
   });
 
   it("returns an error when the collection name already exists", async () => {
@@ -117,7 +142,9 @@ describe("createCollection", () => {
   it("rejects collection creation when a free user is at the collection limit", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
     mockGetUserIsPro.mockResolvedValue(false);
-    mockGetUserItemStats.mockResolvedValue({ ...defaultStats, collectionCount: 3 });
+    mockRunWithFreeTierCollectionGuard.mockRejectedValue(
+      new FreeTierLimitExceededError("collection"),
+    );
 
     const result = await createCollection({
       name: "My Collection",

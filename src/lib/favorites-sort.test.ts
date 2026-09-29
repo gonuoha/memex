@@ -78,19 +78,19 @@ describe("sortFavoriteItems", () => {
     createItem({
       id: "1",
       title: "Beta",
-      type: { name: "note", icon: "StickyNote", color: null },
+      type: { id: "type-note", name: "note", icon: "StickyNote", color: null },
       updatedAt: new Date("2026-01-03"),
     }),
     createItem({
       id: "2",
       title: "Alpha",
-      type: { name: "snippet", icon: "Code", color: null },
+      type: { id: "type-snippet", name: "snippet", icon: "Code", color: null },
       updatedAt: new Date("2026-01-01"),
     }),
     createItem({
       id: "3",
       title: "Gamma",
-      type: { name: "snippet", icon: "Code", color: null },
+      type: { id: "type-snippet-2", name: "snippet", icon: "Code", color: null },
       updatedAt: new Date("2026-01-02"),
     }),
   ];

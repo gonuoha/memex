@@ -1,4 +1,4 @@
-import { Code2, Folder } from "lucide-react";
+import { Code2, Folder, HardDrive } from "lucide-react";
 
 import { PageSection } from "@/components/layout/page-container";
 import { getItemTypeIcon, getItemTypeLabel, getItemTypeStyles } from "@/lib/item-type-styles";
@@ -6,11 +6,14 @@ import type { ProfileItemTypeCount } from "@/lib/db/profile";
 import {
   FREE_COLLECTION_LIMIT,
   FREE_ITEM_LIMIT,
+  formatStorageUsage,
 } from "@/lib/subscription-limits";
 
 type UsageStatisticsCardProps = {
   itemCount: number;
   collectionCount: number;
+  storageUsedBytes: number;
+  storageQuotaBytes: number;
   itemTypeCounts: ProfileItemTypeCount[];
   isPro: boolean;
 };
@@ -25,7 +28,7 @@ function StatCard({
   icon: typeof Code2;
   iconClassName: string;
   iconBgClassName: string;
-  value: number;
+  value: number | string;
   label: string;
 }) {
   return (
@@ -46,6 +49,8 @@ function StatCard({
 export function UsageStatisticsCard({
   itemCount,
   collectionCount,
+  storageUsedBytes,
+  storageQuotaBytes,
   itemTypeCounts,
   isPro,
 }: UsageStatisticsCardProps) {
@@ -55,6 +60,9 @@ export function UsageStatisticsCard({
   const collectionLabel = isPro
     ? "Collections"
     : `Collections (${collectionCount} / ${FREE_COLLECTION_LIMIT})`;
+  const storageLabel = isPro
+    ? `Storage (${formatStorageUsage(storageUsedBytes)} / ${formatStorageUsage(storageQuotaBytes)})`
+    : "Storage";
 
   return (
     <PageSection title="Usage Statistics" className="p-4">
@@ -73,6 +81,15 @@ export function UsageStatisticsCard({
           value={collectionCount}
           label={collectionLabel}
         />
+        {isPro ? (
+          <StatCard
+            icon={HardDrive}
+            iconClassName="text-emerald-500"
+            iconBgClassName="bg-emerald-500/15"
+            value={formatStorageUsage(storageUsedBytes)}
+            label={storageLabel}
+          />
+        ) : null}
       </div>
 
       <div className="mt-4">

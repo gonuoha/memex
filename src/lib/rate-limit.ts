@@ -14,10 +14,22 @@ const FAIL_OPEN_RESULT: RateLimitResult = {
   reset: 0,
 };
 
+function failClosedResult(): RateLimitResult {
+  return {
+    success: false,
+    remaining: 0,
+    reset: Date.now() + 60_000,
+  };
+}
+
 function isRateLimitConfigured(): boolean {
   return Boolean(
     process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN,
   );
+}
+
+function shouldFailClosedOnMissingRedis(): boolean {
+  return process.env.NODE_ENV === "production";
 }
 
 function createRedis(): Redis | null {
@@ -47,16 +59,42 @@ const registerLimiter = createLimiter("register", 3, "1 h");
 const forgotPasswordLimiter = createLimiter("forgot-password", 3, "1 h");
 const resetPasswordLimiter = createLimiter("reset-password", 5, "15 m");
 const resendVerificationLimiter = createLimiter("resend-verification", 3, "15 m");
+const changePasswordLimiter = createLimiter("change-password", 5, "15 m");
+const accountDeletionLimiter = createLimiter("account-deletion", 3, "1 h");
 const aiLimiter = createLimiter("ai", 20, "1 h");
 
-function getClientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
+function parseHops(value: string | null): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+}
 
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim() ?? "unknown";
+/**
+ * Forwarding headers are client-controlled unless a proxy we trust overwrites
+ * them: Vercel sets `x-vercel-forwarded-for`/`x-real-ip` to the client IP, and
+ * a trusted reverse proxy (TRUST_PROXY) appends the client as the last XFF hop.
+ */
+export function getClientIp(request: Request): string {
+  const { headers } = request;
+
+  if (process.env.VERCEL === "1") {
+    return (
+      parseHops(headers.get("x-vercel-forwarded-for"))[0] ??
+      parseHops(headers.get("x-real-ip"))[0] ??
+      "unknown"
+    );
   }
 
-  return request.headers.get("x-real-ip") ?? "unknown";
+  if (process.env.TRUST_PROXY === "true") {
+    return (
+      parseHops(headers.get("x-real-ip"))[0] ??
+      parseHops(headers.get("x-forwarded-for")).at(-1) ??
+      "unknown"
+    );
+  }
+
+  return "unknown";
 }
 
 function buildIdentifier(ip: string, email?: string): string {
@@ -70,8 +108,16 @@ function buildIdentifier(ip: string, email?: string): string {
 async function checkLimiter(
   limiter: Ratelimit | null,
   identifier: string,
+  options?: { failClosed?: boolean },
 ): Promise<RateLimitResult> {
+  const failClosed = options?.failClosed ?? false;
+
   if (!limiter) {
+    if (failClosed && shouldFailClosedOnMissingRedis()) {
+      console.error("Rate limit unavailable in production; failing closed");
+      return failClosedResult();
+    }
+
     return FAIL_OPEN_RESULT;
   }
 
@@ -84,7 +130,12 @@ async function checkLimiter(
       reset: result.reset,
     };
   } catch (error) {
-    console.error("Rate limit check failed, failing open:", error);
+    console.error("Rate limit check failed:", error);
+
+    if (failClosed) {
+      return failClosedResult();
+    }
+
     return FAIL_OPEN_RESULT;
   }
 }
@@ -121,8 +172,20 @@ export async function checkResendVerificationRateLimit(
   return checkLimiter(resendVerificationLimiter, buildIdentifier(ip, email));
 }
 
+export async function checkChangePasswordRateLimit(
+  userId: string,
+): Promise<RateLimitResult> {
+  return checkLimiter(changePasswordLimiter, userId);
+}
+
+export async function checkAccountDeletionRateLimit(
+  userId: string,
+): Promise<RateLimitResult> {
+  return checkLimiter(accountDeletionLimiter, userId);
+}
+
 export async function checkAiRateLimit(userId: string): Promise<RateLimitResult> {
-  return checkLimiter(aiLimiter, userId);
+  return checkLimiter(aiLimiter, userId, { failClosed: true });
 }
 
 function getRetryAfterSeconds(reset: number): number {

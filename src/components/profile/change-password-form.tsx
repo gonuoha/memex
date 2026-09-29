@@ -1,11 +1,13 @@
 "use client";
 
+import { signOut } from "next-auth/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PASSWORD_POLICY_HINT } from "@/lib/validations/password";
 
 type ChangePasswordFormProps = {
   onSuccess?: () => void;
@@ -39,7 +41,10 @@ export function ChangePasswordForm({ onSuccess }: ChangePasswordFormProps) {
         body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
       });
 
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        signOutRequired?: boolean;
+      };
 
       if (!response.ok) {
         toast.error(data.error ?? "Unable to change password.");
@@ -50,8 +55,15 @@ export function ChangePasswordForm({ onSuccess }: ChangePasswordFormProps) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      toast.success("Password updated successfully.");
       onSuccess?.();
+
+      if (data.signOutRequired) {
+        toast.success("Password updated. Please sign in again with your new password.");
+        await signOut({ callbackUrl: "/sign-in?password_changed=1" });
+        return;
+      }
+
+      toast.success("Password updated successfully.");
     } catch {
       toast.error("Unable to change password. Please try again.");
     } finally {
@@ -82,7 +94,9 @@ export function ChangePasswordForm({ onSuccess }: ChangePasswordFormProps) {
           value={newPassword}
           onChange={(event) => setNewPassword(event.target.value)}
           disabled={isSubmitting}
+          minLength={8}
         />
+        <p className="text-xs text-muted-foreground">{PASSWORD_POLICY_HINT}</p>
       </div>
 
       <div className="space-y-2">
@@ -94,6 +108,7 @@ export function ChangePasswordForm({ onSuccess }: ChangePasswordFormProps) {
           value={confirmPassword}
           onChange={(event) => setConfirmPassword(event.target.value)}
           disabled={isSubmitting}
+          minLength={8}
         />
       </div>
 

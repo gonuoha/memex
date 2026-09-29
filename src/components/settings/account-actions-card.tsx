@@ -69,7 +69,10 @@ export function AccountActionsCard({ email, hasPassword }: AccountActionsCardPro
         <p className="text-sm text-muted-foreground">
           Permanently remove your account and all associated data.
         </p>
-        <DeleteAccountButton className="mt-3 sm:w-auto" />
+        <DeleteAccountButton
+          className="mt-3 sm:w-auto"
+          hasPassword={hasPassword}
+        />
       </div>
     </PageSection>
   );

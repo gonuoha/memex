@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
-import { createCheckoutSession } from "@/lib/stripe/subscription";
+import {
+  ActiveSubscriptionError,
+  createCheckoutSession,
+} from "@/lib/stripe/subscription";
 
 const bodySchema = z.object({
   period: z.enum(["monthly", "yearly"]),
@@ -37,7 +40,17 @@ export async function POST(request: Request) {
     );
 
     return NextResponse.json({ url });
-  } catch {
+  } catch (error) {
+    if (error instanceof ActiveSubscriptionError) {
+      return NextResponse.json(
+        {
+          error:
+            "You already have an active Pro subscription. Manage billing in settings.",
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json({ error: "Checkout failed" }, { status: 500 });
   }
 }

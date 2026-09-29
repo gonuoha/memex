@@ -14,8 +14,13 @@ model User {
   name                 String?
   image                String?
   password             String?
+  sessionVersion       Int       @default(0)
   isPro                Boolean   @default(false)
-  stripeCustomerId     String?
+  subscriptionStatus   String?
+  stripePriceId        String?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  stripeCustomerId     String?   @unique
   stripeSubscriptionId String?
   editorPreferences      Json?
   userPreferences        Json?
@@ -158,6 +163,12 @@ model ItemTag {
 
   @@id([itemId, tagId])
   @@index([tagId])
+}
+
+model StripeEvent {
+  id        String   @id
+  type      String
+  createdAt DateTime @default(now())
 }
 
 model ItemCollection {

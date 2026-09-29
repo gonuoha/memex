@@ -129,23 +129,20 @@ export function ItemCreateDialog({
     onDescriptionChange: (description) => handleFormChange({ description }),
   });
   const wasOpenRef = useRef(open);
-
-  function initializeCreateForm() {
-    setFormState({
-      ...initialFormState,
-      type: resolveDefaultCreateType(defaultType, isPro),
-    });
-    aiSuggestions.resetSuggestions();
-  }
+  const { resetSuggestions } = aiSuggestions;
 
   useEffect(() => {
     const justOpened = open && !wasOpenRef.current;
     wasOpenRef.current = open;
 
     if (justOpened) {
-      initializeCreateForm();
+      setFormState({
+        ...initialFormState,
+        type: resolveDefaultCreateType(defaultType, isPro),
+      });
+      resetSuggestions();
     }
-  }, [open, defaultType, isPro]);
+  }, [open, defaultType, isPro, resetSuggestions]);
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {

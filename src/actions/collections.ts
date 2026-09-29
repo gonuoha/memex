@@ -14,12 +14,12 @@ import {
   type ToggleCollectionFavoriteResult,
 } from "@/lib/db/collections";
 import { isUniqueConstraintError } from "@/lib/db/prisma-errors";
-import { getUserItemStats } from "@/lib/db/items";
-import { getUserIsPro } from "@/lib/db/user";
 import {
-  collectionLimitErrorMessage,
-  isAtCollectionLimit,
-} from "@/lib/subscription-limits";
+  FreeTierLimitExceededError,
+  runWithFreeTierCollectionGuard,
+} from "@/lib/db/free-tier-limits";
+import { getUserIsPro } from "@/lib/db/user";
+import { collectionLimitErrorMessage } from "@/lib/subscription-limits";
 import type { ActionResult } from "@/types/actions";
 import {
   createCollectionSchema,
@@ -42,24 +42,26 @@ export async function createCollection(
 
   const isPro = await getUserIsPro(userId);
 
-  if (!isPro) {
-    const stats = await getUserItemStats(userId);
-
-    if (isAtCollectionLimit(stats.collectionCount, isPro)) {
-      return { success: false, error: collectionLimitErrorMessage() };
-    }
-  }
-
   try {
-    const created = await createCollectionInDb(userId, {
-      name: parsed.data.name,
-      description: parsed.data.description ?? null,
-    });
+    const created = await runWithFreeTierCollectionGuard(userId, isPro, (db) =>
+      createCollectionInDb(
+        userId,
+        {
+          name: parsed.data.name,
+          description: parsed.data.description ?? null,
+        },
+        db,
+      ),
+    );
 
     revalidateCollectionPaths();
 
     return { success: true, data: created };
   } catch (error) {
+    if (error instanceof FreeTierLimitExceededError) {
+      return { success: false, error: collectionLimitErrorMessage() };
+    }
+
     if (isUniqueConstraintError(error)) {
       return {
         success: false,

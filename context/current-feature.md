@@ -2,15 +2,24 @@
 
 ## Status
 
-Not Started
+Completed
 
 ## Goals
 
-<!-- What success looks like for the active feature -->
+- **Uploads/downloads**: SVG removed from uploads; image magic-byte validation; download route sends `nosniff`, sandbox CSP, RFC 5987 `Content-Disposition`, inline only for png/jpeg/gif/webp/pdf/text-plain.
+- **Pro gating & storage**: file and image types Pro-only (`isProOnlyItemType`) in upload route, `createItem`, and items page; 1 GB Pro quota from `Item.fileSize` aggregate, enforced on upload and shown on profile; `createItem` records the object size from R2 (HEAD), not the client value.
+- **Account deletion**: requires `DELETE` confirmation plus current password for credentials users; rate limited; aborts with 502 if Stripe cancel fails (missing subscription is treated as already cancelled); deletes R2 prefix `users/{id}/`.
+- **Stripe**: User billing fields (`subscriptionStatus`, `stripePriceId`, `currentPeriodEnd`, `cancelAtPeriodEnd`, unique `stripeCustomerId`); `StripeEvent` idempotency recorded only after handlers succeed (500 on failure); handles `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid/payment_failed` (invoices re-sync the subscription from Stripe); user resolved by `metadata.userId` then `stripeCustomerId`; events for a subscription other than the tracked one cannot revoke Pro; active/trialing/past_due = Pro; checkout 409 if subscribed; customer-create idempotency key; billing card shows renewal/cancel/past_due.
+- **Auth**: normalized emails with case-insensitive lookups; `callbackUrl` sanitization; `sessionVersion` in JWT (null session on mismatch or deleted user), bumped on password reset/change (client signs out after change); JWT 14d/1d; email verification via POST button only with `verify:` token prefix; dummy bcrypt compare; password policy 8 chars / 72 bytes; register Zod schema; HTML-escaped emails.
+- **Validation & limits**: field length limits, max 20 tags / 50 collections, case-insensitive tag de-dup, http/https URLs; free-tier count+insert in a transaction with `pg_advisory_xact_lock(hashtext(userId))`.
+- **Rate limiting**: change-password and account-deletion limiters; client IP from `x-vercel-forwarded-for`/`x-real-ip` on Vercel or last XFF hop with `TRUST_PROXY=true`, else `unknown`; AI limiter fails closed on Redis errors and when unconfigured in production.
+- **Platform**: security headers + CSP in `next.config.ts` (Monaco via cdn.jsdelivr.net incl. blob: workers, https images, dev-only `unsafe-eval`), `poweredByHeader: false`; seed refuses production unless `ALLOW_PRODUCTION_SEED=true`; `typecheck` script.
 
 ## Notes
 
-<!-- Additional context, constraints, or details from spec -->
+- Migrations: `20260929120000_billing_hardening` (billing fields, `StripeEvent`, unique `stripeCustomerId` — fails if duplicate customer IDs exist) and `20260929133000_session_version`.
+- Stripe webhook must subscribe to the six events above.
+- Known follow-ups: uploads that are never attached to an item are not counted toward the quota (add an R2 lifecycle rule or pending-upload tracking); CSP still allows `'unsafe-inline'` scripts (nonce-based CSP would remove it); verify inline PDF preview in Chrome under the download `sandbox` CSP.
 
 ## History
 
@@ -78,3 +87,4 @@ Not Started
 - 2026-08-11: Completed **Prompt Optimization** — `optimizePrompt` server action with Pro gating, auth, Zod validation, and AI rate limits; Optimize button with Original/Optimized tabs in item drawer read view for prompt items; accept/reject before saving via `updateItem`; toast when prompt is already well-structured; Crown icon and upgrade prompt for free users; unit tests for action, validations, and prompts
 - 2026-08-12: Completed **Server Actions DRY Refactor** — extracted shared `ActionResult`, `requireSession`, `parseActionInput`, `requireAiAccess`, `handleAiActionError`, and `isUniqueConstraintError` helpers; adopted subscription limit utilities in create actions; consolidated action test fixtures, auth mocks, and parameterized AI guard tests; unit tests for all new helpers
 - 2026-08-13: Completed **Add Light and Dark-blue Themes** - added more themes. Defaults to system (light / dark)
+- 2026-09-29: Completed **Phase 1 — Production Hardening** — upload/download XSS fixes (no SVG, magic bytes, sandboxed downloads), Pro gating for images, 1 GB storage quota from R2 object size, R2 cleanup and re-auth on account deletion, Stripe subscription state sync with webhook idempotency, session revocation via `sessionVersion`, POST-only email verification, password policy, input limits, free-tier advisory locks, expanded rate limiting, security headers and CSP

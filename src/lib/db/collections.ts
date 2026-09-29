@@ -4,7 +4,10 @@ import {
   normalizePage,
   type PaginatedResult,
 } from "@/lib/pagination";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+
+type DbClient = Prisma.TransactionClient | typeof prisma;
 
 export type CollectionItemType = {
   id: string;
@@ -346,8 +349,9 @@ export async function createCollection(
     name: string;
     description: string | null;
   },
+  db: DbClient = prisma,
 ): Promise<CreatedCollection> {
-  return prisma.collection.create({
+  return db.collection.create({
     data: {
       userId,
       name: data.name,

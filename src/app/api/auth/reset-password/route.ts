@@ -1,14 +1,24 @@
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { resetPasswordWithToken } from "@/lib/email/password-reset";
-import { checkResetPasswordRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
+import {
+  checkResetPasswordRateLimit,
+  rateLimitedResponse,
+} from "@/lib/rate-limit";
+import { passwordSchema } from "@/lib/validations/password";
 
-type ResetPasswordRequestBody = {
-  token?: string;
-  password?: string;
-  confirmPassword?: string;
-};
+const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "Token is required"),
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 export async function POST(request: Request) {
   const rateLimit = await checkResetPasswordRateLimit(request);
@@ -17,29 +27,25 @@ export async function POST(request: Request) {
     return rateLimitedResponse(rateLimit);
   }
 
-  let body: ResetPasswordRequestBody;
+  let body: unknown;
 
   try {
-    body = (await request.json()) as ResetPasswordRequestBody;
+    body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { token, password, confirmPassword } = body;
+  const parsed = resetPasswordSchema.safeParse(body);
 
-  if (!token || !password || !confirmPassword) {
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "Token, password, and confirmPassword are required" },
+      { error: parsed.error.issues[0]?.message ?? "Invalid request" },
       { status: 400 },
     );
   }
 
-  if (password !== confirmPassword) {
-    return NextResponse.json({ error: "Passwords do not match" }, { status: 400 });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 12);
-  const result = await resetPasswordWithToken(token, passwordHash);
+  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  const result = await resetPasswordWithToken(parsed.data.token, passwordHash);
 
   if (result.status === "expired") {
     return NextResponse.json(

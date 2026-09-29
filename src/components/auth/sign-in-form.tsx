@@ -10,13 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthErrorMessage, AuthInfoMessage } from "@/components/auth/auth-message";
 import { OAuthDivider } from "@/components/auth/oauth-divider";
+import { sanitizeCallbackUrl } from "@/lib/sanitize-callback-url";
 
 export function SignInForm() {
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
   const verified = searchParams.get("verified") === "1";
   const registered = searchParams.get("registered") === "1";
   const passwordReset = searchParams.get("password_reset") === "1";
+  const passwordChanged = searchParams.get("password_changed") === "1";
   const authError = searchParams.get("error");
 
   const [email, setEmail] = useState("");
@@ -145,6 +147,12 @@ export function SignInForm() {
       {passwordReset ? (
         <AuthInfoMessage>
           Password reset successfully. Sign in with your new password.
+        </AuthInfoMessage>
+      ) : null}
+
+      {passwordChanged ? (
+        <AuthInfoMessage>
+          Password changed successfully. Sign in with your new password.
         </AuthInfoMessage>
       ) : null}
 

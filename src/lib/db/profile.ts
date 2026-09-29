@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { getSystemItemTypes, getUserItemStats } from "@/lib/db/items";
+import { getUserStorageUsageBytes } from "@/lib/db/user";
+import { PRO_STORAGE_QUOTA_BYTES } from "@/lib/subscription-limits";
 import { prisma } from "@/lib/prisma";
 
 export type ProfileItemTypeCount = {
@@ -25,6 +27,8 @@ export type ProfileData = {
   stats: {
     itemCount: number;
     collectionCount: number;
+    storageUsedBytes: number;
+    storageQuotaBytes: number;
   };
   itemTypeCounts: ProfileItemTypeCount[];
 };
@@ -53,8 +57,9 @@ export const getProfileData = cache(async (): Promise<ProfileData> => {
     redirect("/api/auth/signout?callbackUrl=/sign-in");
   }
 
-  const [stats, typeCounts, systemTypes] = await Promise.all([
+  const [stats, storageUsedBytes, typeCounts, systemTypes] = await Promise.all([
     getUserItemStats(user.id),
+    user.isPro ? getUserStorageUsageBytes(user.id) : Promise.resolve(0),
     prisma.item.groupBy({
       by: ["typeId"],
       where: { userId: user.id },
@@ -87,6 +92,8 @@ export const getProfileData = cache(async (): Promise<ProfileData> => {
     stats: {
       itemCount: stats.itemCount,
       collectionCount: stats.collectionCount,
+      storageUsedBytes,
+      storageQuotaBytes: user.isPro ? PRO_STORAGE_QUOTA_BYTES : 0,
     },
     itemTypeCounts,
   };

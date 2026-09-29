@@ -7,8 +7,14 @@ import {
   validateUploadFile,
   type UploadCategory,
 } from "@/lib/file-upload";
-import { getUserIsPro } from "@/lib/db/user";
+import { getUserIsPro, getUserStorageUsageBytes } from "@/lib/db/user";
+import { imageMimeMatchesMagicBytes } from "@/lib/image-magic-bytes";
 import { uploadObject } from "@/lib/r2/storage";
+import {
+  isAtStorageLimit,
+  isProOnlyItemType,
+  storageQuotaErrorMessage,
+} from "@/lib/subscription-limits";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -45,14 +51,22 @@ export async function POST(request: Request) {
   }
 
   const category = categoryValue as UploadCategory;
+  const isPro = await getUserIsPro(session.user.id);
 
-  if (category === "file") {
-    const isPro = await getUserIsPro(session.user.id);
-
+  if (isProOnlyItemType(category)) {
     if (!isPro) {
       return NextResponse.json(
-        { error: "File uploads require a Pro subscription" },
+        { error: "File and image uploads require a Pro subscription" },
         { status: 403 },
+      );
+    }
+
+    const usedBytes = await getUserStorageUsageBytes(session.user.id);
+
+    if (isAtStorageLimit(usedBytes, file.size, isPro)) {
+      return NextResponse.json(
+        { error: storageQuotaErrorMessage() },
+        { status: 413 },
       );
     }
   }
@@ -70,9 +84,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  if (category === "image" && !imageMimeMatchesMagicBytes(file.type, buffer)) {
+    return NextResponse.json(
+      { error: "File contents do not match the declared image type" },
+      { status: 400 },
+    );
+  }
+
   const fileName = sanitizeFileName(file.name);
   const key = buildR2ObjectKey(session.user.id, fileName);
-  const buffer = Buffer.from(await file.arrayBuffer());
 
   try {
     await uploadObject(key, buffer, file.type);

@@ -9,7 +9,6 @@ const IMAGE_EXTENSIONS = new Set([
   ".jpeg",
   ".gif",
   ".webp",
-  ".svg",
 ]);
 
 const FILE_EXTENSIONS = new Set([
@@ -30,7 +29,6 @@ const IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/gif",
   "image/webp",
-  "image/svg+xml",
 ]);
 
 const FILE_MIME_TYPES = new Set([

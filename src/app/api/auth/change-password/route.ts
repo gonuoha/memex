@@ -1,14 +1,25 @@
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  checkChangePasswordRateLimit,
+  rateLimitedResponse,
+} from "@/lib/rate-limit";
+import { passwordSchema } from "@/lib/validations/password";
 
-type ChangePasswordRequestBody = {
-  currentPassword?: string;
-  newPassword?: string;
-  confirmPassword?: string;
-};
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -17,25 +28,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: ChangePasswordRequestBody;
+  const rateLimit = await checkChangePasswordRateLimit(session.user.id);
+
+  if (!rateLimit.success) {
+    return rateLimitedResponse(rateLimit);
+  }
+
+  let body: unknown;
 
   try {
-    body = (await request.json()) as ChangePasswordRequestBody;
+    body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { currentPassword, newPassword, confirmPassword } = body;
+  const parsed = changePasswordSchema.safeParse(body);
 
-  if (!currentPassword || !newPassword || !confirmPassword) {
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "Current password, new password, and confirmPassword are required" },
+      { error: parsed.error.issues[0]?.message ?? "Invalid request" },
       { status: 400 },
     );
-  }
-
-  if (newPassword !== confirmPassword) {
-    return NextResponse.json({ error: "Passwords do not match" }, { status: 400 });
   }
 
   const user = await prisma.user.findUnique({
@@ -50,18 +63,21 @@ export async function POST(request: Request) {
     );
   }
 
-  const isValid = await bcrypt.compare(currentPassword, user.password);
+  const isValid = await bcrypt.compare(
+    parsed.data.currentPassword,
+    user.password,
+  );
 
   if (!isValid) {
     return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
   }
 
-  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
 
   await prisma.user.update({
     where: { id: session.user.id },
-    data: { password: passwordHash },
+    data: { password: passwordHash, sessionVersion: { increment: 1 } },
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, signOutRequired: true });
 }

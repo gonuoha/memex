@@ -4,10 +4,61 @@ function emptyToNull(value: unknown) {
   return typeof value === "string" && value.trim() === "" ? null : value;
 }
 
-const nullableTrimmedString = z.preprocess(
+function nullableTrimmedStringMax(maxLength: number) {
+  return z.preprocess(
+    emptyToNull,
+    z.string().trim().max(maxLength).nullable().optional(),
+  );
+}
+
+const titleSchema = z.string().trim().min(1, "Title is required").max(200);
+const descriptionSchema = nullableTrimmedStringMax(2000);
+const contentSchema = nullableTrimmedStringMax(100_000);
+const languageSchema = nullableTrimmedStringMax(50);
+
+const httpHttpsUrlSchema = z.preprocess(
   emptyToNull,
-  z.string().trim().nullable(),
+  z
+    .string()
+    .trim()
+    .max(2048)
+    .url("Enter a valid URL")
+    .refine((value) => {
+      try {
+        const protocol = new URL(value).protocol;
+        return protocol === "http:" || protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, "URL must use http or https")
+    .nullable(),
 );
+
+const tagListSchema = z
+  .array(z.string().trim().min(1).max(40))
+  .max(20)
+  .default([])
+  .transform((tags) => {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+
+    for (const tag of tags) {
+      const key = tag.toLowerCase();
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(tag);
+      }
+    }
+
+    return unique;
+  });
+
+const collectionIdListSchema = z
+  .array(z.string().trim().min(1))
+  .max(50)
+  .default([])
+  .transform((ids) => [...new Set(ids)]);
 
 export const creatableItemTypeSchema = z.enum([
   "snippet",
@@ -20,34 +71,28 @@ export const creatableItemTypeSchema = z.enum([
 ]);
 
 export const updateItemSchema = z.object({
-  title: z.string().trim().min(1, "Title is required"),
-  description: nullableTrimmedString.optional(),
-  content: nullableTrimmedString.optional(),
-  language: nullableTrimmedString.optional(),
-  url: z.preprocess(
-    emptyToNull,
-    z.string().trim().url("Enter a valid URL").nullable(),
-  ).optional(),
-  tags: z.array(z.string().trim().min(1)).default([]),
-  collectionIds: z.array(z.string().trim().min(1)).default([]),
+  title: titleSchema,
+  description: descriptionSchema,
+  content: contentSchema,
+  language: languageSchema,
+  url: httpHttpsUrlSchema.optional(),
+  tags: tagListSchema,
+  collectionIds: collectionIdListSchema,
 });
 
 export const createItemSchema = z
   .object({
     type: creatableItemTypeSchema,
-    title: z.string().trim().min(1, "Title is required"),
-    description: nullableTrimmedString.optional(),
-    content: nullableTrimmedString.optional(),
-    language: nullableTrimmedString.optional(),
-    url: z.preprocess(
-      emptyToNull,
-      z.string().trim().url("Enter a valid URL").nullable(),
-    ).optional(),
+    title: titleSchema,
+    description: descriptionSchema,
+    content: contentSchema,
+    language: languageSchema,
+    url: httpHttpsUrlSchema.optional(),
     fileUrl: z.string().trim().min(1).optional(),
-    fileName: z.string().trim().min(1).optional(),
+    fileName: z.string().trim().min(1).max(255).optional(),
     fileSize: z.number().int().positive().optional(),
-    tags: z.array(z.string().trim().min(1)).default([]),
-    collectionIds: z.array(z.string().trim().min(1)).default([]),
+    tags: tagListSchema,
+    collectionIds: collectionIdListSchema,
   })
   .superRefine((data, ctx) => {
     if (data.type === "link" && !data.url) {

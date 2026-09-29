@@ -1,4 +1,5 @@
 import { getAppUrl } from "@/lib/app-url";
+import { escapeHtml } from "@/lib/escape-html";
 import { getFromEmail, getResend } from "@/lib/email/resend";
 
 type SendPasswordResetEmailParams = {
@@ -14,7 +15,10 @@ export async function sendPasswordResetEmail({
 }: SendPasswordResetEmailParams): Promise<void> {
   const resetUrl = new URL("/reset-password", getAppUrl());
   resetUrl.searchParams.set("token", token);
-  const greeting = name ? `Hi ${name},` : "Hi,";
+  const safeUrl = escapeHtml(resetUrl.toString());
+  const greeting = name
+    ? `Hi ${escapeHtml(name)},`
+    : "Hi,";
 
   const { error } = await getResend().emails.send({
     from: getFromEmail(),
@@ -23,7 +27,7 @@ export async function sendPasswordResetEmail({
     html: `
       <p>${greeting}</p>
       <p>We received a request to reset your password. Click the link below to choose a new one:</p>
-      <p><a href="${resetUrl.toString()}">Reset password</a></p>
+      <p><a href="${safeUrl}">Reset password</a></p>
       <p>This link expires in 1 hour. If you didn't request a password reset, you can ignore this email.</p>
     `,
   });

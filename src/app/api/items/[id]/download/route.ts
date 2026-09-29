@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
 import { getItemById } from "@/lib/db/items";
+import {
+  buildContentDispositionHeader,
+  DOWNLOAD_RESPONSE_CSP,
+  resolveContentDisposition,
+  resolveDownloadContentType,
+} from "@/lib/file-download";
 import { getObject } from "@/lib/r2/storage";
 
 type RouteContext = {
@@ -22,7 +28,8 @@ export async function GET(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const download = new URL(request.url).searchParams.get("download") === "1";
+  const forceDownload =
+    new URL(request.url).searchParams.get("download") === "1";
 
   try {
     const object = await getObject(item.fileUrl);
@@ -32,14 +39,26 @@ export async function GET(request: Request, { params }: RouteContext) {
     }
 
     const body = object.Body.transformToWebStream();
-    const contentType = object.ContentType ?? "application/octet-stream";
+    const storedContentType = object.ContentType ?? "application/octet-stream";
     const fileName = item.fileName ?? "download";
-    const disposition = download ? "attachment" : "inline";
+    const disposition = resolveContentDisposition(
+      storedContentType,
+      forceDownload,
+    );
+    const contentType = resolveDownloadContentType(
+      storedContentType,
+      disposition,
+    );
 
     return new NextResponse(body, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `${disposition}; filename="${encodeURIComponent(fileName)}"`,
+        "Content-Disposition": buildContentDispositionHeader(
+          disposition,
+          fileName,
+        ),
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": DOWNLOAD_RESPONSE_CSP,
         "Cache-Control": "private, max-age=3600",
       },
     });

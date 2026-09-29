@@ -10,6 +10,7 @@ import { OAuthDivider } from "@/components/auth/oauth-divider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PASSWORD_POLICY_HINT } from "@/lib/validations/password";
 import { isValidEmail } from "@/lib/validate-email";
 
 export function RegisterForm() {
@@ -118,6 +119,7 @@ export function RegisterForm() {
             value={name}
             onChange={(event) => setName(event.target.value)}
             disabled={isSubmitting}
+            maxLength={100}
           />
         </div>
 
@@ -143,7 +145,9 @@ export function RegisterForm() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             disabled={isSubmitting}
+            minLength={8}
           />
+          <p className="text-xs text-muted-foreground">{PASSWORD_POLICY_HINT}</p>
         </div>
 
         <div className="space-y-2">
@@ -155,6 +159,7 @@ export function RegisterForm() {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             disabled={isSubmitting}
+            minLength={8}
           />
         </div>
 

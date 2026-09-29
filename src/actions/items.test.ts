@@ -23,8 +23,22 @@ vi.mock("@/lib/db/user", () => ({
   getUserIsPro: vi.fn(),
 }));
 
+vi.mock("@/lib/db/free-tier-limits", () => ({
+  FreeTierLimitExceededError: class FreeTierLimitExceededError extends Error {
+    readonly kind: "item" | "collection";
+
+    constructor(kind: "item" | "collection") {
+      super(`Free tier ${kind} limit exceeded`);
+      this.name = "FreeTierLimitExceededError";
+      this.kind = kind;
+    }
+  },
+  runWithFreeTierItemGuard: vi.fn(),
+}));
+
 vi.mock("@/lib/r2/storage", () => ({
   deleteObject: vi.fn(),
+  getObjectSize: vi.fn(),
 }));
 
 import { validateUserCollectionIds } from "@/lib/db/collections";
@@ -36,8 +50,12 @@ import {
   toggleItemFavorite as toggleItemFavoriteInDb,
   toggleItemPin as toggleItemPinInDb,
 } from "@/lib/db/items";
+import {
+  FreeTierLimitExceededError,
+  runWithFreeTierItemGuard,
+} from "@/lib/db/free-tier-limits";
 import { getUserIsPro } from "@/lib/db/user";
-import { deleteObject } from "@/lib/r2/storage";
+import { deleteObject, getObjectSize } from "@/lib/r2/storage";
 
 import { createItem, deleteItem, toggleItemFavorite, toggleItemPin } from "./items";
 
@@ -49,7 +67,9 @@ const mockDeleteItemInDb = vi.mocked(deleteItemInDb);
 const mockToggleItemFavoriteInDb = vi.mocked(toggleItemFavoriteInDb);
 const mockToggleItemPinInDb = vi.mocked(toggleItemPinInDb);
 const mockGetUserIsPro = vi.mocked(getUserIsPro);
+const mockRunWithFreeTierItemGuard = vi.mocked(runWithFreeTierItemGuard);
 const mockDeleteObject = vi.mocked(deleteObject);
+const mockGetObjectSize = vi.mocked(getObjectSize);
 
 const createdItem: ItemDetail = {
   id: "item-1",
@@ -82,6 +102,9 @@ describe("createItem", () => {
     mockValidateUserCollectionIds.mockResolvedValue(true);
     mockGetUserIsPro.mockResolvedValue(false);
     mockGetUserItemStats.mockResolvedValue(defaultStats);
+    mockRunWithFreeTierItemGuard.mockImplementation(async (_userId, _isPro, create) =>
+      create({} as never),
+    );
   });
 
   it("returns unauthorized when there is no session", async () => {
@@ -130,20 +153,24 @@ describe("createItem", () => {
 
     expect(result).toEqual({ success: true, data: createdItem });
     expect(mockGetItemTypeBySlug).toHaveBeenCalledWith("user-1", "snippet");
-    expect(mockCreateItemInDb).toHaveBeenCalledWith("user-1", {
-      typeId: "type-snippet",
-      title: "Test",
-      description: null,
-      content: null,
-      url: null,
-      language: null,
-      fileUrl: null,
-      fileName: null,
-      fileSize: null,
-      tags: ["js"],
-      collectionIds: [],
-      contentType: "text",
-    });
+    expect(mockCreateItemInDb).toHaveBeenCalledWith(
+      "user-1",
+      {
+        typeId: "type-snippet",
+        title: "Test",
+        description: null,
+        content: null,
+        url: null,
+        language: null,
+        fileUrl: null,
+        fileName: null,
+        fileSize: null,
+        tags: ["js"],
+        collectionIds: [],
+        contentType: "text",
+      },
+      {},
+    );
   });
 
   it("rejects invalid collection selections", async () => {
@@ -195,6 +222,7 @@ describe("createItem", () => {
       expect.objectContaining({
         collectionIds: ["collection-1", "collection-2"],
       }),
+      expect.anything(),
     );
   });
 
@@ -206,6 +234,7 @@ describe("createItem", () => {
       icon: "Image",
       color: "#ec4899",
     });
+    mockGetUserIsPro.mockResolvedValue(true);
 
     const result = await createItem({
       type: "image",
@@ -218,6 +247,31 @@ describe("createItem", () => {
     expect(result).toEqual({
       success: false,
       error: "Invalid file reference",
+    });
+    expect(mockCreateItemInDb).not.toHaveBeenCalled();
+  });
+
+  it("rejects image item creation for non-Pro users", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-image",
+      name: "image",
+      icon: "Image",
+      color: "#ec4899",
+    });
+    mockGetUserIsPro.mockResolvedValue(false);
+
+    const result = await createItem({
+      type: "image",
+      title: "Screenshot",
+      fileUrl: "users/user-1/abc123/photo.png",
+      fileName: "photo.png",
+      fileSize: 1024,
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "File and image uploads require a Pro subscription",
     });
     expect(mockCreateItemInDb).not.toHaveBeenCalled();
   });
@@ -242,7 +296,7 @@ describe("createItem", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "File uploads require a Pro subscription",
+      error: "File and image uploads require a Pro subscription",
     });
     expect(mockCreateItemInDb).not.toHaveBeenCalled();
   });
@@ -258,6 +312,40 @@ describe("createItem", () => {
     mockGetUserIsPro.mockResolvedValue(true);
     mockGetUserItemStats.mockResolvedValue({ ...defaultStats, itemCount: 50 });
     mockCreateItemInDb.mockResolvedValue(createdItem);
+    mockGetObjectSize.mockResolvedValue(4096);
+
+    const result = await createItem({
+      type: "file",
+      title: "Notes",
+      fileUrl: "users/user-1/abc123/notes.pdf",
+      fileName: "notes.pdf",
+      fileSize: 1,
+    });
+
+    expect(result).toEqual({ success: true, data: createdItem });
+    expect(mockGetObjectSize).toHaveBeenCalledWith("users/user-1/abc123/notes.pdf");
+    expect(mockCreateItemInDb).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        fileUrl: "users/user-1/abc123/notes.pdf",
+        fileName: "notes.pdf",
+        fileSize: 4096,
+        contentType: "file",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects file items whose object does not exist in storage", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-file",
+      name: "file",
+      icon: "File",
+      color: "#64748b",
+    });
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockGetObjectSize.mockResolvedValue(null);
 
     const result = await createItem({
       type: "file",
@@ -267,16 +355,8 @@ describe("createItem", () => {
       fileSize: 1024,
     });
 
-    expect(result).toEqual({ success: true, data: createdItem });
-    expect(mockCreateItemInDb).toHaveBeenCalledWith(
-      "user-1",
-      expect.objectContaining({
-        fileUrl: "users/user-1/abc123/notes.pdf",
-        fileName: "notes.pdf",
-        fileSize: 1024,
-        contentType: "file",
-      }),
-    );
+    expect(result).toEqual({ success: false, error: "Invalid file reference" });
+    expect(mockCreateItemInDb).not.toHaveBeenCalled();
   });
 
   it("rejects item creation when a free user is at the item limit", async () => {
@@ -288,7 +368,9 @@ describe("createItem", () => {
       color: "#3b82f6",
     });
     mockGetUserIsPro.mockResolvedValue(false);
-    mockGetUserItemStats.mockResolvedValue({ ...defaultStats, itemCount: 50 });
+    mockRunWithFreeTierItemGuard.mockRejectedValue(
+      new FreeTierLimitExceededError("item"),
+    );
 
     const result = await createItem({ type: "snippet", title: "Test" });
 

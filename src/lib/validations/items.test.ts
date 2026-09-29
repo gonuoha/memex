@@ -136,6 +136,30 @@ describe("createItemSchema", () => {
     }
   });
 
+  it("rejects non-http(s) URLs", () => {
+    const result = createItemSchema.safeParse({
+      type: "link",
+      title: "My link",
+      url: "javascript:alert(1)",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("deduplicates tags case-insensitively", () => {
+    const result = createItemSchema.safeParse({
+      type: "snippet",
+      title: "Snippet",
+      tags: ["API", "api", "Docs"],
+    });
+
+    expect(result.success).toBe(true);
+
+    if (result.success) {
+      expect(result.data.tags).toEqual(["API", "Docs"]);
+    }
+  });
+
   it("accepts collectionIds in create payloads", () => {
     const result = createItemSchema.safeParse({
       type: "snippet",

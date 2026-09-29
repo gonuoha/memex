@@ -12,6 +12,15 @@ export type DashboardUser = {
   isPro: boolean;
 };
 
+export async function getUserStorageUsageBytes(userId: string): Promise<number> {
+  const result = await prisma.item.aggregate({
+    where: { userId },
+    _sum: { fileSize: true },
+  });
+
+  return result._sum.fileSize ?? 0;
+}
+
 export async function getUserIsPro(userId: string): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },

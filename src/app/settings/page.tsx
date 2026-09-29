@@ -28,6 +28,9 @@ export default async function SettingsPage() {
           <BillingCard
             isPro={user.isPro}
             stripeCustomerId={user.stripeCustomerId}
+            subscriptionStatus={user.subscriptionStatus}
+            currentPeriodEnd={user.currentPeriodEnd}
+            cancelAtPeriodEnd={user.cancelAtPeriodEnd}
             itemCount={usage.itemCount}
             collectionCount={usage.collectionCount}
           />

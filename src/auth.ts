@@ -7,11 +7,23 @@ import GitHub from "next-auth/providers/github";
 import authConfig from "@/auth.config";
 import { isEmailVerificationEnabled } from "@/lib/email/config";
 import { prisma } from "@/lib/prisma";
+import { normalizeEmail } from "@/lib/validate-email";
+
+const FOURTEEN_DAYS_SECONDS = 14 * 24 * 60 * 60;
+const ONE_DAY_SECONDS = 24 * 60 * 60;
+
+/** Bcrypt hash of a dummy password used for constant-time credential checks. */
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$snrd7BOi543ToZaxt/RCVuZ3dR8L4gVDbd/Tw97B4qAi3rpGSEKBO";
 
 export const { handlers, auth, signIn } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    maxAge: FOURTEEN_DAYS_SECONDS,
+    updateAge: ONE_DAY_SECONDS,
+  },
   pages: {
     signIn: "/sign-in",
   },
@@ -30,8 +42,10 @@ export const { handlers, auth, signIn } = NextAuth({
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email },
+        const normalizedEmail = normalizeEmail(email);
+
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: normalizedEmail, mode: "insensitive" } },
           select: {
             id: true,
             email: true,
@@ -41,13 +55,10 @@ export const { handlers, auth, signIn } = NextAuth({
           },
         });
 
-        if (!user?.password) {
-          return null;
-        }
+        const passwordHash = user?.password ?? DUMMY_PASSWORD_HASH;
+        const isValid = await bcrypt.compare(password, passwordHash);
 
-        const isValid = await bcrypt.compare(password, user.password);
-
-        if (!isValid) {
+        if (!user?.password || !isValid) {
           return null;
         }
 
@@ -76,25 +87,56 @@ export const { handlers, auth, signIn } = NextAuth({
       return true;
     },
     async jwt({ token, user }) {
-      if (user) {
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { isPro: true, sessionVersion: true },
+        });
+
+        if (!dbUser) {
+          return null;
+        }
+
         token.sub = user.id;
         token.name = user.name;
         token.email = user.email;
         token.picture = user.image;
+        token.isPro = dbUser.isPro;
+        token.sessionVersion = dbUser.sessionVersion;
+        return token;
       }
 
-      if (token.sub) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.sub },
-          select: { isPro: true },
-        });
-        token.isPro = dbUser?.isPro ?? false;
+      if (!token.sub) {
+        return token;
       }
+
+      const dbUser = await prisma.user.findUnique({
+        where: { id: token.sub },
+        select: { isPro: true, sessionVersion: true },
+      });
+
+      if (!dbUser) {
+        return null;
+      }
+
+      if (
+        token.sessionVersion !== undefined &&
+        token.sessionVersion !== dbUser.sessionVersion
+      ) {
+        return null;
+      }
+
+      token.isPro = dbUser.isPro;
+      token.sessionVersion = dbUser.sessionVersion;
 
       return token;
     },
     async session({ session, token }) {
-      if (session.user && token.sub) {
+      if (!token.sub) {
+        return session;
+      }
+
+      if (session.user) {
         session.user.id = token.sub;
         session.user.name = (token.name as string | null | undefined) ?? session.user.name;
         session.user.email = (token.email as string | null | undefined) ?? session.user.email;

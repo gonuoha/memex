@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 
 import { signIn } from "@/auth";
 import { checkLoginRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
+import { sanitizeCallbackUrl } from "@/lib/sanitize-callback-url";
+import { normalizeEmail } from "@/lib/validate-email";
 
 type LoginRequestBody = {
   email?: string;
@@ -19,9 +21,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const email = body.email?.trim();
+  const email = body.email ? normalizeEmail(body.email) : "";
   const password = body.password;
-  const callbackUrl = body.callbackUrl ?? "/dashboard";
+  const callbackUrl = sanitizeCallbackUrl(body.callbackUrl);
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required" }, { status: 400 });

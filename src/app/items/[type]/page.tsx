@@ -13,6 +13,7 @@ import {
 import { getItemTypeLabel } from "@/lib/item-type-styles";
 import { getCurrentUser } from "@/lib/db/user";
 import { parsePageParam } from "@/lib/pagination";
+import { isProOnlyItemType } from "@/lib/subscription-limits";
 
 type ItemsByTypePageProps = {
   params: Promise<{ type: string }>;
@@ -40,7 +41,7 @@ export default async function ItemsByTypePage({
   const isImageType = itemType.name.toLowerCase() === "image";
   const isFileType = itemType.name.toLowerCase() === "file";
 
-  if ((isFileType || isImageType) && !user.isPro) {
+  if (isProOnlyItemType(itemType.name) && !user.isPro) {
     redirect("/upgrade");
   }
 

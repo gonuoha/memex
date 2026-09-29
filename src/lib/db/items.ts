@@ -8,9 +8,12 @@ import {
   normalizePage,
   type PaginatedResult,
 } from "@/lib/pagination";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 
 import type { CollectionItemType } from "./collections";
+
+type DbClient = Prisma.TransactionClient | typeof prisma;
 
 const pinnedFirstByUpdatedAt = [
   { isPinned: "desc" as const },
@@ -289,8 +292,9 @@ export type CreateItemData = {
 export async function createItem(
   userId: string,
   data: CreateItemData,
+  db: DbClient = prisma,
 ): Promise<ItemDetail> {
-  const item = await prisma.item.create({
+  const item = await db.item.create({
     data: {
       userId,
       typeId: data.typeId,

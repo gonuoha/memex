@@ -6,13 +6,7 @@ import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { createVerificationToken } from "@/lib/email/verification";
 import { prisma } from "@/lib/prisma";
 import { checkRegisterRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
-
-type RegisterRequestBody = {
-  name?: string;
-  email?: string;
-  password?: string;
-  confirmPassword?: string;
-};
+import { registerRequestSchema } from "@/lib/validations/register";
 
 export async function POST(request: Request) {
   const rateLimit = await checkRegisterRateLimit(request);
@@ -21,32 +15,27 @@ export async function POST(request: Request) {
     return rateLimitedResponse(rateLimit);
   }
 
-  let body: RegisterRequestBody;
+  let body: unknown;
 
   try {
-    body = (await request.json()) as RegisterRequestBody;
+    body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { name, email, password, confirmPassword } = body;
+  const parsed = registerRequestSchema.safeParse(body);
 
-  if (!name || !email || !password || !confirmPassword) {
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "Name, email, password, and confirmPassword are required" },
+      { error: parsed.error.issues[0]?.message ?? "Invalid request" },
       { status: 400 },
     );
   }
 
-  if (password !== confirmPassword) {
-    return NextResponse.json(
-      { error: "Passwords do not match" },
-      { status: 400 },
-    );
-  }
+  const { name, email, password } = parsed.data;
 
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
+  const existingUser = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
     select: { id: true },
   });
 

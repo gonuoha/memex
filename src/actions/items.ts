@@ -8,7 +8,6 @@ import {
   createItem as createItemInDb,
   deleteItem as deleteItemInDb,
   getItemTypeBySlug,
-  getUserItemStats,
   toggleItemFavorite as toggleItemFavoriteInDb,
   toggleItemPin as toggleItemPinInDb,
   updateItem as updateItemInDb,
@@ -20,19 +19,16 @@ import type {
   ToggleItemPinResult,
 } from "@/lib/db/items";
 import { validateUserCollectionIds } from "@/lib/db/collections";
+import {
+  FreeTierLimitExceededError,
+  runWithFreeTierItemGuard,
+} from "@/lib/db/free-tier-limits";
 import { getUserIsPro } from "@/lib/db/user";
 import { isOwnedFileUrl } from "@/lib/file-upload";
-import { deleteObject } from "@/lib/r2/storage";
-import {
-  isAtItemLimit,
-  itemLimitErrorMessage,
-} from "@/lib/subscription-limits";
+import { deleteObject, getObjectSize } from "@/lib/r2/storage";
+import { isProOnlyItemType, itemLimitErrorMessage } from "@/lib/subscription-limits";
 import type { ActionResult } from "@/types/actions";
 import { createItemSchema, updateItemSchema } from "@/lib/validations/items";
-
-function isFileItemType(typeName: string) {
-  return typeName === "file" || typeName === "image";
-}
 
 export async function createItem(
   data: unknown,
@@ -56,30 +52,31 @@ export async function createItem(
 
   const isPro = await getUserIsPro(userId);
 
-  if (!isPro) {
-    const stats = await getUserItemStats(userId);
-
-    if (isAtItemLimit(stats.itemCount, isPro)) {
-      return { success: false, error: itemLimitErrorMessage() };
-    }
-  }
-
-  if (parsed.data.type === "file") {
+  if (isProOnlyItemType(parsed.data.type)) {
     if (!isPro) {
       return {
         success: false,
-        error: "File uploads require a Pro subscription",
+        error: "File and image uploads require a Pro subscription",
       };
     }
   }
 
-  const usesFileContent = isFileItemType(parsed.data.type);
+  const usesFileContent = isProOnlyItemType(parsed.data.type);
 
   if (
     usesFileContent &&
     parsed.data.fileUrl &&
     !isOwnedFileUrl(parsed.data.fileUrl, userId)
   ) {
+    return { success: false, error: "Invalid file reference" };
+  }
+
+  const storedFileSize =
+    usesFileContent && parsed.data.fileUrl
+      ? await getObjectSize(parsed.data.fileUrl)
+      : null;
+
+  if (usesFileContent && parsed.data.fileUrl && storedFileSize === null) {
     return { success: false, error: "Invalid file reference" };
   }
 
@@ -92,20 +89,36 @@ export async function createItem(
     return { success: false, error: "Invalid collection selection" };
   }
 
-  const created = await createItemInDb(userId, {
-    typeId: itemType.id,
-    title: parsed.data.title,
-    description: parsed.data.description ?? null,
-    content: parsed.data.content ?? null,
-    url: parsed.data.url ?? null,
-    language: parsed.data.language ?? null,
-    fileUrl: usesFileContent ? (parsed.data.fileUrl ?? null) : null,
-    fileName: usesFileContent ? (parsed.data.fileName ?? null) : null,
-    fileSize: usesFileContent ? (parsed.data.fileSize ?? null) : null,
-    tags: parsed.data.tags,
-    collectionIds: parsed.data.collectionIds,
-    contentType: usesFileContent ? "file" : "text",
-  });
+  let created: ItemDetail;
+
+  try {
+    created = await runWithFreeTierItemGuard(userId, isPro, (db) =>
+      createItemInDb(
+        userId,
+        {
+          typeId: itemType.id,
+          title: parsed.data.title,
+          description: parsed.data.description ?? null,
+          content: parsed.data.content ?? null,
+          url: parsed.data.url ?? null,
+          language: parsed.data.language ?? null,
+          fileUrl: usesFileContent ? (parsed.data.fileUrl ?? null) : null,
+          fileName: usesFileContent ? (parsed.data.fileName ?? null) : null,
+          fileSize: storedFileSize,
+          tags: parsed.data.tags,
+          collectionIds: parsed.data.collectionIds,
+          contentType: usesFileContent ? "file" : "text",
+        },
+        db,
+      ),
+    );
+  } catch (error) {
+    if (error instanceof FreeTierLimitExceededError) {
+      return { success: false, error: itemLimitErrorMessage() };
+    }
+
+    throw error;
+  }
 
   revalidatePath(`/items/${parsed.data.type}`);
   revalidatePath("/dashboard");

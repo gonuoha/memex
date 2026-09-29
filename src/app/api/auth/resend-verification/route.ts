@@ -4,7 +4,7 @@ import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { createVerificationToken } from "@/lib/email/verification";
 import { prisma } from "@/lib/prisma";
 import { checkResendVerificationRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
-import { isValidEmail } from "@/lib/validate-email";
+import { isValidEmail, normalizeEmail } from "@/lib/validate-email";
 
 type ResendVerificationRequestBody = {
   email?: string;
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const email = body.email?.trim();
+  const email = body.email ? normalizeEmail(body.email) : "";
 
   if (!email) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -38,8 +38,8 @@ export async function POST(request: Request) {
     return rateLimitedResponse(rateLimit);
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email },
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
     select: { name: true, emailVerified: true, password: true },
   });
 

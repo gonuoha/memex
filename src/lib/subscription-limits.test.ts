@@ -3,10 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   FREE_COLLECTION_LIMIT,
   FREE_ITEM_LIMIT,
+  PRO_STORAGE_QUOTA_BYTES,
   collectionLimitErrorMessage,
+  formatStorageUsage,
   isAtCollectionLimit,
   isAtItemLimit,
+  isAtStorageLimit,
+  isProOnlyItemType,
   itemLimitErrorMessage,
+  storageQuotaErrorMessage,
 } from "./subscription-limits";
 
 describe("subscription-limits", () => {
@@ -56,6 +61,31 @@ describe("subscription-limits", () => {
       expect(itemLimitErrorMessage()).toBe(
         "Free plan is limited to 50 items. Upgrade to Pro for unlimited items.",
       );
+    });
+  });
+
+  describe("isProOnlyItemType", () => {
+    it("identifies file and image types", () => {
+      expect(isProOnlyItemType("file")).toBe(true);
+      expect(isProOnlyItemType("IMAGE")).toBe(true);
+      expect(isProOnlyItemType("snippet")).toBe(false);
+    });
+  });
+
+  describe("isAtStorageLimit", () => {
+    it("enforces the pro storage quota", () => {
+      expect(isAtStorageLimit(PRO_STORAGE_QUOTA_BYTES - 1, 2, true)).toBe(
+        true,
+      );
+      expect(isAtStorageLimit(0, PRO_STORAGE_QUOTA_BYTES, true)).toBe(false);
+      expect(isAtStorageLimit(PRO_STORAGE_QUOTA_BYTES, 1, false)).toBe(false);
+    });
+  });
+
+  describe("formatStorageUsage", () => {
+    it("formats storage values", () => {
+      expect(formatStorageUsage(2048)).toBe("2.0 KB");
+      expect(storageQuotaErrorMessage()).toContain("1 GB");
     });
   });
 

@@ -137,6 +137,10 @@ export function FileUpload({
 
   const Icon = category === "image" ? ImageIcon : FileIcon;
   const label = category === "image" ? "image" : "file";
+  const accept =
+    category === "image"
+      ? ".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp"
+      : ".pdf,.txt,.md,.json,.yaml,.yml,.xml,.csv,.toml,.ini";
 
   if (value) {
     return (
@@ -231,12 +235,16 @@ export function FileUpload({
             {isUploading ? "Uploading..." : `Drop your ${label} here`}
           </p>
           <p className="text-xs text-muted-foreground">
-            or click to browse
+            {category === "image"
+              ? "PNG, JPEG, GIF, or WebP up to 5 MB"
+              : "Documents up to 10 MB"}
           </p>
+          <p className="text-xs text-muted-foreground">or click to browse</p>
         </div>
         <input
           ref={inputRef}
           type="file"
+          accept={accept}
           className="hidden"
           disabled={disabled || isUploading}
           onChange={(event) => {

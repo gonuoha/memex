@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 
 import { prisma } from "@/lib/prisma";
+import { normalizeEmail } from "@/lib/validate-email";
 
 const PASSWORD_RESET_PREFIX = "password-reset:";
 const TOKEN_EXPIRY_HOURS = 1;
@@ -11,7 +12,7 @@ export type PasswordResetTokenResult =
   | { status: "expired" };
 
 function toIdentifier(email: string): string {
-  return `${PASSWORD_RESET_PREFIX}${email}`;
+  return `${PASSWORD_RESET_PREFIX}${normalizeEmail(email)}`;
 }
 
 function emailFromIdentifier(identifier: string): string {
@@ -80,9 +81,14 @@ export async function resetPasswordWithToken(
   }
 
   await prisma.$transaction([
-    prisma.user.update({
-      where: { email: validation.email },
-      data: { password: passwordHash },
+    prisma.user.updateMany({
+      where: {
+        email: { equals: validation.email, mode: "insensitive" },
+      },
+      data: {
+        password: passwordHash,
+        sessionVersion: { increment: 1 },
+      },
     }),
     prisma.verificationToken.delete({
       where: {

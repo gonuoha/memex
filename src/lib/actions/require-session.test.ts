@@ -16,7 +16,7 @@ describe("requireSession", () => {
   });
 
   it("returns unauthorized when there is no session", async () => {
-    mockAuth.mockResolvedValue(null);
+    mockAuth.mockResolvedValue(null as never);
 
     const result = await requireSession();
 
