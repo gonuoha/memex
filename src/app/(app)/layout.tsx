@@ -16,7 +16,6 @@ export default async function AppLayout({
     sidebarData,
     user,
     collections,
-    searchData,
     editorPreferences,
     userPreferences,
     usage,
@@ -27,7 +26,6 @@ export default async function AppLayout({
       sidebar={<SidebarContent sidebarData={sidebarData} />}
       isPro={user.isPro}
       collections={collections}
-      searchData={searchData}
       editorPreferences={editorPreferences}
       userPreferences={userPreferences}
       itemCount={usage.itemCount}

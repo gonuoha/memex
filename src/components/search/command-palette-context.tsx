@@ -6,17 +6,23 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
-import type { DashboardSearchData } from "@/lib/db/dashboard";
+export type CreateDialogHandlers = {
+  openItemCreate: () => void;
+  openCollectionCreate: () => void;
+};
 
 type CommandPaletteContextValue = {
   open: boolean;
   openPalette: () => void;
   closePalette: () => void;
   togglePalette: () => void;
-  searchData: DashboardSearchData;
+  registerCreateHandlers: (handlers: CreateDialogHandlers | null) => void;
+  openItemCreate: () => void;
+  openCollectionCreate: () => void;
 };
 
 const CommandPaletteContext = createContext<CommandPaletteContextValue | null>(
@@ -25,12 +31,11 @@ const CommandPaletteContext = createContext<CommandPaletteContextValue | null>(
 
 export function CommandPaletteProvider({
   children,
-  searchData,
 }: {
   children: React.ReactNode;
-  searchData: DashboardSearchData;
 }) {
   const [open, setOpen] = useState(false);
+  const createHandlersRef = useRef<CreateDialogHandlers | null>(null);
 
   const openPalette = useCallback(() => {
     setOpen(true);
@@ -42,6 +47,21 @@ export function CommandPaletteProvider({
 
   const togglePalette = useCallback(() => {
     setOpen((current) => !current);
+  }, []);
+
+  const registerCreateHandlers = useCallback(
+    (handlers: CreateDialogHandlers | null) => {
+      createHandlersRef.current = handlers;
+    },
+    [],
+  );
+
+  const openItemCreate = useCallback(() => {
+    createHandlersRef.current?.openItemCreate();
+  }, []);
+
+  const openCollectionCreate = useCallback(() => {
+    createHandlersRef.current?.openCollectionCreate();
   }, []);
 
   useEffect(() => {
@@ -73,9 +93,19 @@ export function CommandPaletteProvider({
       openPalette,
       closePalette,
       togglePalette,
-      searchData,
+      registerCreateHandlers,
+      openItemCreate,
+      openCollectionCreate,
     }),
-    [open, openPalette, closePalette, togglePalette, searchData],
+    [
+      open,
+      openPalette,
+      closePalette,
+      togglePalette,
+      registerCreateHandlers,
+      openItemCreate,
+      openCollectionCreate,
+    ],
   );
 
   return (

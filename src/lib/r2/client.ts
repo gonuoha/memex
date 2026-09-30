@@ -26,3 +26,13 @@ export function getR2Client() {
 export function getR2BucketName() {
   return getRequiredEnv("R2_BUCKET_NAME");
 }
+
+export function getR2ConnectSrcOrigin(): string {
+  const accountId = process.env.R2_ACCOUNT_ID;
+
+  if (accountId) {
+    return `https://${accountId}.r2.cloudflarestorage.com`;
+  }
+
+  return "https://*.r2.cloudflarestorage.com";
+}

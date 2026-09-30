@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { FolderOpen, PanelLeft, Plus, Search, Star } from "lucide-react";
@@ -41,7 +41,7 @@ export function TopBar({
 }) {
   const { toggleSidebar } = useSidebar();
   const pathname = usePathname();
-  const { openPalette } = useCommandPalette();
+  const { openPalette, registerCreateHandlers } = useCommandPalette();
   const searchShortcutLabel = useSearchShortcutLabel();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCollectionCreateOpen, setIsCollectionCreateOpen] = useState(false);
@@ -50,23 +50,34 @@ export function TopBar({
   >(null);
   const defaultType = parseCreatableItemTypeFromPathname(pathname);
 
-  function handleNewItemClick() {
+  const handleNewItemClick = useCallback(() => {
     if (isAtItemLimit(itemCount, isPro)) {
       setUpgradeReason("item_limit");
       return;
     }
 
     setIsCreateOpen(true);
-  }
+  }, [itemCount, isPro]);
 
-  function handleNewCollectionClick() {
+  const handleNewCollectionClick = useCallback(() => {
     if (isAtCollectionLimit(collectionCount, isPro)) {
       setUpgradeReason("collection_limit");
       return;
     }
 
     setIsCollectionCreateOpen(true);
-  }
+  }, [collectionCount, isPro]);
+
+  useEffect(() => {
+    registerCreateHandlers({
+      openItemCreate: handleNewItemClick,
+      openCollectionCreate: handleNewCollectionClick,
+    });
+
+    return () => {
+      registerCreateHandlers(null);
+    };
+  }, [registerCreateHandlers, handleNewItemClick, handleNewCollectionClick]);
 
   return (
     <>

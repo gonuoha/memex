@@ -38,13 +38,6 @@ export type DashboardItem = {
   tags: string[];
 };
 
-export type SearchableItem = {
-  id: string;
-  title: string;
-  type: CollectionItemType;
-  contentPreview: string | null;
-};
-
 export type FileListItem = {
   id: string;
   title: string;
@@ -598,75 +591,6 @@ export async function permanentlyDeleteItem(
     typeName: existing.type.name,
     fileUrl: existing.fileUrl,
   };
-}
-
-const CONTENT_PREVIEW_MAX_LENGTH = 120;
-
-function truncateContentPreview(value: string): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-
-  if (normalized.length <= CONTENT_PREVIEW_MAX_LENGTH) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, CONTENT_PREVIEW_MAX_LENGTH).trimEnd()}...`;
-}
-
-function buildItemContentPreview(item: {
-  content: string | null;
-  url: string | null;
-  fileName: string | null;
-  description: string | null;
-}): string | null {
-  if (item.content) {
-    return truncateContentPreview(item.content);
-  }
-
-  if (item.url) {
-    return item.url;
-  }
-
-  if (item.fileName) {
-    return item.fileName;
-  }
-
-  if (item.description) {
-    return truncateContentPreview(item.description);
-  }
-
-  return null;
-}
-
-export async function getSearchableItems(
-  userId: string,
-): Promise<SearchableItem[]> {
-  const items = await prisma.item.findMany({
-    where: activeItemWhere(userId),
-    orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      content: true,
-      url: true,
-      fileName: true,
-      description: true,
-      type: {
-        select: {
-          id: true,
-          name: true,
-          icon: true,
-          color: true,
-        },
-      },
-    },
-  });
-
-  return items.map((item) => ({
-    id: item.id,
-    title: item.title,
-    type: item.type,
-    contentPreview: buildItemContentPreview(item),
-  }));
 }
 
 export async function getFavoriteItems(userId: string): Promise<DashboardItem[]> {

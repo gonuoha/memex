@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
+import { getR2ConnectSrcOrigin } from "./src/lib/r2/client";
+
 const isDevelopment = process.env.NODE_ENV === "development";
+const r2ConnectSrc = getR2ConnectSrcOrigin();
 
 function buildContentSecurityPolicy(): string {
   const scriptSrc = isDevelopment
@@ -14,7 +17,7 @@ function buildContentSecurityPolicy(): string {
     "font-src 'self' data: https://cdn.jsdelivr.net",
     "img-src 'self' data: blob: https:",
     "worker-src 'self' blob:",
-    "connect-src 'self' https://cdn.jsdelivr.net",
+    `connect-src 'self' https://cdn.jsdelivr.net ${r2ConnectSrc}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self' https://github.com",

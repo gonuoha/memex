@@ -7,8 +7,11 @@ import {
   NotFound,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { getR2BucketName, getR2Client } from "./client";
+
+const PRESIGNED_UPLOAD_EXPIRY_SECONDS = 5 * 60;
 
 export async function uploadObject(
   key: string,
@@ -145,4 +148,41 @@ export async function getObject(key: string) {
       Key: key,
     }),
   );
+}
+
+export async function getObjectByteRange(
+  key: string,
+  start: number,
+  end: number,
+): Promise<Buffer> {
+  const client = getR2Client();
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: getR2BucketName(),
+      Key: key,
+      Range: `bytes=${start}-${end}`,
+    }),
+  );
+
+  const bytes = await response.Body?.transformToByteArray();
+
+  return Buffer.from(bytes ?? []);
+}
+
+export async function createPresignedUploadUrl(
+  key: string,
+  contentType: string,
+  contentLength: number,
+): Promise<string> {
+  const client = getR2Client();
+  const command = new PutObjectCommand({
+    Bucket: getR2BucketName(),
+    Key: key,
+    ContentType: contentType,
+    ContentLength: contentLength,
+  });
+
+  return getSignedUrl(client, command, {
+    expiresIn: PRESIGNED_UPLOAD_EXPIRY_SECONDS,
+  });
 }

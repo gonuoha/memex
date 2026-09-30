@@ -24,18 +24,55 @@ type FileUploadProps = {
   disabled?: boolean;
 };
 
-function uploadWithProgress(
+type UploadUrlResponse = {
+  uploadUrl: string;
+  key: string;
+  fileName: string;
+  fileSize: number;
+};
+
+async function requestUploadUrl(
+  file: File,
+  category: UploadCategory,
+): Promise<UploadUrlResponse> {
+  const response = await fetch("/api/items/upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      category,
+      fileName: file.name,
+      contentType: file.type || "application/octet-stream",
+      size: file.size,
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error ?? "Upload failed");
+  }
+
+  return (await response.json()) as UploadUrlResponse;
+}
+
+async function uploadWithProgress(
   file: File,
   category: UploadCategory,
   onProgress: (progress: number) => void,
-) {
-  return new Promise<UploadedFile>((resolve, reject) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("category", category);
+): Promise<UploadedFile> {
+  const { uploadUrl, key, fileName, fileSize } = await requestUploadUrl(
+    file,
+    category,
+  );
 
+  return new Promise<UploadedFile>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/items/upload");
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader(
+      "Content-Type",
+      file.type || "application/octet-stream",
+    );
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {
         onProgress(Math.round((event.loaded / event.total) * 100));
@@ -43,25 +80,20 @@ function uploadWithProgress(
     });
     xhr.addEventListener("load", () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText) as UploadedFile);
-        } catch {
-          reject(new Error("Invalid upload response"));
-        }
+        resolve({
+          fileUrl: key,
+          fileName,
+          fileSize,
+        });
         return;
       }
 
-      try {
-        const payload = JSON.parse(xhr.responseText) as { error?: string };
-        reject(new Error(payload.error ?? "Upload failed"));
-      } catch {
-        reject(new Error("Upload failed"));
-      }
+      reject(new Error("Upload failed"));
     });
     xhr.addEventListener("error", () => {
       reject(new Error("Upload failed"));
     });
-    xhr.send(formData);
+    xhr.send(file);
   });
 }
 

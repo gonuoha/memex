@@ -62,6 +62,8 @@ const resendVerificationLimiter = createLimiter("resend-verification", 3, "15 m"
 const changePasswordLimiter = createLimiter("change-password", 5, "15 m");
 const accountDeletionLimiter = createLimiter("account-deletion", 3, "1 h");
 const aiLimiter = createLimiter("ai", 20, "1 h");
+const searchLimiter = createLimiter("search", 120, "1 m");
+const uploadUrlLimiter = createLimiter("upload-url", 60, "1 m");
 
 function parseHops(value: string | null): string[] {
   return (value ?? "")
@@ -186,6 +188,18 @@ export async function checkAccountDeletionRateLimit(
 
 export async function checkAiRateLimit(userId: string): Promise<RateLimitResult> {
   return checkLimiter(aiLimiter, userId, { failClosed: true });
+}
+
+export async function checkSearchRateLimit(
+  userId: string,
+): Promise<RateLimitResult> {
+  return checkLimiter(searchLimiter, userId);
+}
+
+export async function checkUploadUrlRateLimit(
+  userId: string,
+): Promise<RateLimitResult> {
+  return checkLimiter(uploadUrlLimiter, userId);
 }
 
 function getRetryAfterSeconds(reset: number): number {

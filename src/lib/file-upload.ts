@@ -1,7 +1,26 @@
+import { z } from "zod";
+
 export type UploadCategory = "image" | "file";
 
-const IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
-const FILE_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+export const IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+export const FILE_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+
+export const uploadUrlRequestSchema = z.object({
+  category: z.enum(["image", "file"]),
+  fileName: z.string().min(1).max(260),
+  contentType: z.string().min(1).max(200),
+  size: z.number().int().positive(),
+});
+
+export type UploadUrlRequest = z.infer<typeof uploadUrlRequestSchema>;
+
+export function parseUploadUrlRequest(data: unknown) {
+  return uploadUrlRequestSchema.safeParse(data);
+}
+
+export function getMaxUploadBytes(category: UploadCategory): number {
+  return category === "image" ? IMAGE_MAX_SIZE_BYTES : FILE_MAX_SIZE_BYTES;
+}
 
 const IMAGE_EXTENSIONS = new Set([
   ".png",

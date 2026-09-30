@@ -17,7 +17,6 @@ import { prisma } from "@/lib/prisma";
 import {
   deleteItem,
   getItemById,
-  getSearchableItems,
   permanentlyDeleteItem,
   restoreItem,
   toggleItemFavorite,
@@ -26,7 +25,6 @@ import {
 } from "./items";
 
 const mockFindFirst = vi.mocked(prisma.item.findFirst);
-const mockFindMany = vi.mocked(prisma.item.findMany);
 const mockUpdate = vi.mocked(prisma.item.update);
 const mockDeleteMany = vi.mocked(prisma.item.deleteMany);
 
@@ -43,16 +41,6 @@ describe("item queries exclude trashed items", () => {
     await expect(getItemById("user-1", "item-1")).resolves.toBeNull();
     expect(mockFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: activeWhere }),
-    );
-  });
-
-  it("getSearchableItems filters out trashed items", async () => {
-    mockFindMany.mockResolvedValue([] as never);
-
-    await getSearchableItems("user-1");
-
-    expect(mockFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: "user-1", deletedAt: null } }),
     );
   });
 

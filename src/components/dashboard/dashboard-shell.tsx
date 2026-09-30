@@ -8,7 +8,6 @@ import { AppearanceSync } from "@/components/theme/appearance-sync";
 import { UserPreferencesProvider } from "@/components/user-preferences/user-preferences-context";
 import { CommandPalette } from "@/components/search/command-palette";
 import { CommandPaletteProvider } from "@/components/search/command-palette-context";
-import type { DashboardSearchData } from "@/lib/db/dashboard";
 import type { SelectableCollection } from "@/lib/db/collections";
 import type { EditorPreferences } from "@/lib/editor-preferences";
 import type { UserPreferences } from "@/lib/user-preferences";
@@ -82,7 +81,6 @@ export function DashboardShell({
   sidebar,
   isPro,
   collections,
-  searchData,
   editorPreferences,
   userPreferences,
   itemCount,
@@ -92,7 +90,6 @@ export function DashboardShell({
   sidebar: React.ReactNode;
   isPro: boolean;
   collections: SelectableCollection[];
-  searchData: DashboardSearchData;
   editorPreferences: EditorPreferences;
   userPreferences: UserPreferences;
   itemCount: number;
@@ -104,7 +101,7 @@ export function DashboardShell({
         <AppearanceSync appearance={userPreferences.appearance} />
         <UserPreferencesProvider initialPreferences={userPreferences}>
           <EditorPreferencesProvider initialPreferences={editorPreferences}>
-            <CommandPaletteProvider searchData={searchData}>
+            <CommandPaletteProvider>
               <DashboardShellInner
                 sidebar={sidebar}
                 isPro={isPro}

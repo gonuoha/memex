@@ -4,6 +4,7 @@ import {
   formatFileSize,
   getFileExtension,
   isOwnedFileUrl,
+  parseUploadUrlRequest,
   sanitizeFileName,
   validateUploadFile,
 } from "./file-upload";
@@ -118,6 +119,30 @@ describe("validateUploadFile", () => {
     );
 
     expect(error).toBeNull();
+  });
+});
+
+describe("parseUploadUrlRequest", () => {
+  it("accepts a valid presign payload", () => {
+    const result = parseUploadUrlRequest({
+      category: "image",
+      fileName: "photo.png",
+      contentType: "image/png",
+      size: 1024,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid categories", () => {
+    const result = parseUploadUrlRequest({
+      category: "video",
+      fileName: "clip.mp4",
+      contentType: "video/mp4",
+      size: 1024,
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

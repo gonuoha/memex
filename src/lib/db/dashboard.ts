@@ -7,21 +7,17 @@ import {
 
 import {
   getRecentCollections,
-  getSearchableCollections,
   getSelectableCollections,
   toDashboardStats,
   type DashboardCollection,
   type DashboardStats,
-  type SearchableCollection,
   type SelectableCollection,
 } from "@/lib/db/collections";
 import {
   getPinnedItems,
   getRecentItems,
-  getSearchableItems,
   getUserItemStats,
   type DashboardItem,
-  type SearchableItem,
 } from "@/lib/db/items";
 import { getSidebarData, type SidebarData } from "@/lib/db/sidebar";
 import { getUserPreferences, getEditorPreferences } from "@/lib/db/settings";
@@ -37,16 +33,10 @@ export type DashboardPageData = {
   showOverview: boolean;
 };
 
-export type DashboardSearchData = {
-  items: SearchableItem[];
-  collections: SearchableCollection[];
-};
-
 export type DashboardLayoutData = {
   user: DashboardUser;
   sidebarData: SidebarData;
   collections: SelectableCollection[];
-  searchData: DashboardSearchData;
   editorPreferences: EditorPreferences;
   userPreferences: UserPreferences;
   usage: {
@@ -80,12 +70,10 @@ export const getDashboardPageData = cache(
 export const getDashboardLayoutData = cache(
   async (): Promise<DashboardLayoutData> => {
     const user = await getCurrentUser();
-    const [sidebarData, collections, items, searchableCollections, editorPreferences, userPreferences, stats] =
+    const [sidebarData, collections, editorPreferences, userPreferences, stats] =
       await Promise.all([
         getSidebarData(user),
         getSelectableCollections(user.id),
-        getSearchableItems(user.id),
-        getSearchableCollections(user.id),
         getEditorPreferences(user.id),
         getUserPreferences(user.id),
         getUserItemStats(user.id),
@@ -95,10 +83,6 @@ export const getDashboardLayoutData = cache(
       user,
       sidebarData,
       collections,
-      searchData: {
-        items,
-        collections: searchableCollections,
-      },
       editorPreferences,
       userPreferences,
       usage: {

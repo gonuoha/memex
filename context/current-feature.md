@@ -6,7 +6,7 @@ In Progress
 
 ## Goals
 
-**Phase 2a — Architecture (this step)**
+**Phase 2a — Architecture**
 
 - **Route group**: all authenticated pages (dashboard, items, collections, favorites, trash, profile, settings, upgrade) live in `src/app/(app)/` with one `layout.tsx` (force-dynamic, `DashboardShell` + `getDashboardLayoutData`) that also enforces the session server-side via `ensureAppSession` (callbackUrl from the `x-pathname` header set by `src/proxy.ts`). Shared `(app)/error.tsx` (keeps the shell, uses `unstable_retry`), `(app)/loading.tsx`, root `error.tsx` for layout failures, root `not-found.tsx`.
 - **Item trash**: `Item.deletedAt` + `(userId, deletedAt)` index. Deleting moves to trash (and unpins); every item read/count/groupBy and collection count/dominant-type query uses the not-trashed filter from `src/lib/db/item-filters.ts`, so trashed items are hidden from dashboard, sidebar, search data, favorites, pinned/recent, lists, collections, drawer API, download route, profile stats, and free-tier item count; update/favorite/pin on a trashed item returns "Item not found".
@@ -14,7 +14,11 @@ In Progress
 - **Tests**: `src/lib/db/items.test.ts` locks in the not-trashed filter on reads/mutations and the trash filter on restore/permanent delete; `trash.test.ts` covers batching, restore races, R2 failures and the purge cap; `cron-auth.test.ts` covers bearer verification.
 - **Auto-purge**: `purgeExpiredTrash` removes items trashed more than 30 days ago in batches of 100 (max 50 batches per run) with bulk R2 `DeleteObjects`; `GET /api/cron/purge-trash` requires `Authorization: Bearer $CRON_SECRET` (constant-time compare, 500 if unset); `vercel.json` schedules it daily at 05:00 UTC.
 - **Quota policy**: trashed items do not count toward the free-tier item limit, but their files count toward the storage quota until purged.
-- **Next step (Phase 2b)**: server-side search (replace pre-fetched command-palette data) and direct-to-R2 presigned uploads.
+
+**Phase 2b — Architecture (this step)**
+
+- **Server-side search**: migration `20260930150000_item_full_text_search` (`pg_trgm`, generated `Item.searchVector` + GIN, trigram indexes on `Item.title` and `Collection.name`). `GET /api/search` (auth, Zod, 120 req/min fail-open) backed by `src/lib/db/search.ts` and `src/lib/search-query.ts` (`type:`, `tag:` / `#`). Command palette loads results on demand (debounced, abortable, `shouldFilter={false}`, safe highlights); layout no longer prefetches searchable items/collections. `getSelectableCollections` capped at 500.
+- **Direct-to-R2 uploads**: `POST /api/items/upload-url` returns a presigned PUT (5 min, signed `ContentType` + `ContentLength`); client uploads via XHR PUT; `createItem` HEADs R2, enforces size quota, validates image magic bytes (range GET), deletes orphan objects on failure. Legacy multipart `POST /api/items/upload` returns 410. CSP `connect-src` includes the R2 endpoint origin.
 
 **Baseline from Phase 1**
 
@@ -30,6 +34,7 @@ In Progress
 ## Notes
 
 - Phase 2a migration: `20260929180000_item_trash` (nullable `deletedAt` + index; safe on existing data). Set `CRON_SECRET` in Vercel (and document it in `.env.example`); the cron route returns 500 until it is set.
+- Phase 2b migration: `20260930150000_item_full_text_search`. Apply R2 bucket CORS (app origin + `http://localhost:3000`, `PUT`, `Content-Type` header, reasonable `MaxAge`). Existing R2 env vars unchanged; `@aws-sdk/s3-request-presigner` added for upload URLs.
 - Any new item query must use `activeItemWhere` / `notTrashed` from `src/lib/db/item-filters.ts` unless it intentionally targets trash (trash page, restore/permanent delete, purge) or storage usage.
 - `(app)/layout.tsx` and pages render in parallel, so page-level `getCurrentUser()` may redirect to `/sign-in` without a callbackUrl if the proxy is bypassed; the proxy remains the primary guard.
 - `emptyTrash` has no batch cap (runs in a server action); very large trashes rely on the daily purge if it times out.
@@ -105,3 +110,4 @@ In Progress
 - 2026-08-12: Completed **Server Actions DRY Refactor** — extracted shared `ActionResult`, `requireSession`, `parseActionInput`, `requireAiAccess`, `handleAiActionError`, and `isUniqueConstraintError` helpers; adopted subscription limit utilities in create actions; consolidated action test fixtures, auth mocks, and parameterized AI guard tests; unit tests for all new helpers
 - 2026-08-13: Completed **Add Light and Dark-blue Themes** - added more themes. Defaults to system (light / dark)
 - 2026-09-29: Completed **Phase 1 — Production Hardening** — upload/download XSS fixes (no SVG, magic bytes, sandboxed downloads), Pro gating for images, 1 GB storage quota from R2 object size, R2 cleanup and re-auth on account deletion, Stripe subscription state sync with webhook idempotency, session revocation via `sessionVersion`, POST-only email verification, password policy, input limits, free-tier advisory locks, expanded rate limiting, security headers and CSP
+- 2026-09-30: Completed **Phase 2 — Architecture** — shared `(app)` route group with server-side auth guard, item trash with restore/permanent delete/30-day cron purge, Postgres full-text + trigram search behind `/api/search` with on-demand command palette, presigned direct-to-R2 uploads with server-side size/quota/magic-byte verification

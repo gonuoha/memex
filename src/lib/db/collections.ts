@@ -65,12 +65,6 @@ export type SelectableCollection = {
   name: string;
 };
 
-export type SearchableCollection = {
-  id: string;
-  name: string;
-  itemCount: number;
-};
-
 export type FavoriteCollection = {
   id: string;
   name: string;
@@ -455,33 +449,20 @@ export async function deleteCollection(
   return existing;
 }
 
+const SELECTABLE_COLLECTIONS_LIMIT = 500;
+
 export async function getSelectableCollections(
   userId: string,
 ): Promise<SelectableCollection[]> {
   return prisma.collection.findMany({
     where: { userId },
     orderBy: { name: "asc" },
+    take: SELECTABLE_COLLECTIONS_LIMIT,
     select: {
       id: true,
       name: true,
     },
   });
-}
-
-export async function getSearchableCollections(
-  userId: string,
-): Promise<SearchableCollection[]> {
-  const collections = await prisma.collection.findMany({
-    where: { userId },
-    orderBy: { name: "asc" },
-    include: collectionCountInclude,
-  });
-
-  return collections.map((collection) => ({
-    id: collection.id,
-    name: collection.name,
-    itemCount: collection._count.items,
-  }));
 }
 
 export async function validateUserCollectionIds(

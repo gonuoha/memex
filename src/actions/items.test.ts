@@ -46,6 +46,7 @@ vi.mock("@/lib/db/free-tier-limits", () => ({
 
 vi.mock("@/lib/r2/storage", () => ({
   deleteObject: vi.fn(),
+  getObjectByteRange: vi.fn(),
   getObjectMetadata: vi.fn(),
 }));
 
@@ -67,7 +68,11 @@ import {
   runWithFreeTierItemRestoreGuard,
 } from "@/lib/db/free-tier-limits";
 import { getUserIsPro, getUserStorageUsageBytes } from "@/lib/db/user";
-import { deleteObject, getObjectMetadata } from "@/lib/r2/storage";
+import {
+  deleteObject,
+  getObjectByteRange,
+  getObjectMetadata,
+} from "@/lib/r2/storage";
 import { itemLimitErrorMessage } from "@/lib/subscription-limits";
 
 import {
@@ -96,7 +101,13 @@ const mockToggleItemPinInDb = vi.mocked(toggleItemPinInDb);
 const mockGetUserIsPro = vi.mocked(getUserIsPro);
 const mockRunWithFreeTierItemGuard = vi.mocked(runWithFreeTierItemGuard);
 const mockDeleteObject = vi.mocked(deleteObject);
+const mockGetObjectByteRange = vi.mocked(getObjectByteRange);
 const mockGetObjectMetadata = vi.mocked(getObjectMetadata);
+
+const pngHeader = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,
+]);
 const mockGetUserStorageUsageBytes = vi.mocked(getUserStorageUsageBytes);
 
 const createdItem: ItemDetail = {
@@ -414,6 +425,102 @@ describe("createItem", () => {
     });
 
     expect(result).toEqual({ success: false, error: "Invalid file reference" });
+    expect(mockDeleteObject).toHaveBeenCalledWith("users/user-1/abc123/notes.pdf");
+    expect(mockCreateItemInDb).not.toHaveBeenCalled();
+  });
+
+  it("rejects image items whose magic bytes do not match", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-image",
+      name: "image",
+      icon: "Image",
+      color: "#ec4899",
+    });
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockGetObjectMetadata.mockResolvedValue({
+      size: 1024,
+      contentType: "image/png",
+    });
+    mockGetObjectByteRange.mockResolvedValue(Buffer.from("not-a-png-file"));
+
+    const result = await createItem({
+      type: "image",
+      title: "Screenshot",
+      fileUrl: "users/user-1/abc123/photo.png",
+      fileName: "photo.png",
+      fileSize: 1024,
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "File contents do not match the declared image type",
+    });
+    expect(mockDeleteObject).toHaveBeenCalledWith("users/user-1/abc123/photo.png");
+    expect(mockCreateItemInDb).not.toHaveBeenCalled();
+  });
+
+  it("creates an image item when magic bytes match the declared type", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-image",
+      name: "image",
+      icon: "Image",
+      color: "#ec4899",
+    });
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockCreateItemInDb.mockResolvedValue(createdItem);
+    mockGetObjectMetadata.mockResolvedValue({
+      size: 2048,
+      contentType: "image/png",
+    });
+    mockGetObjectByteRange.mockResolvedValue(pngHeader);
+    mockGetUserStorageUsageBytes.mockResolvedValue(0);
+
+    const result = await createItem({
+      type: "image",
+      title: "Screenshot",
+      fileUrl: "users/user-1/abc123/photo.png",
+      fileName: "photo.png",
+      fileSize: 2048,
+    });
+
+    expect(result).toEqual({ success: true, data: createdItem });
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockCreateItemInDb).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ fileSize: 2048, contentType: "file" }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects uploads larger than the category limit reported by R2", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-file",
+      name: "file",
+      icon: "File",
+      color: "#64748b",
+    });
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockGetObjectMetadata.mockResolvedValue({
+      size: 11 * 1024 * 1024,
+      contentType: "application/pdf",
+    });
+
+    const result = await createItem({
+      type: "file",
+      title: "Huge",
+      fileUrl: "users/user-1/abc123/huge.pdf",
+      fileName: "huge.pdf",
+      fileSize: 1,
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Uploaded file exceeds the size limit",
+    });
+    expect(mockDeleteObject).toHaveBeenCalled();
     expect(mockCreateItemInDb).not.toHaveBeenCalled();
   });
 

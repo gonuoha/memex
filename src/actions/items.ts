@@ -33,8 +33,18 @@ import {
   runWithFreeTierItemRestoreGuard,
 } from "@/lib/db/free-tier-limits";
 import { getUserIsPro, getUserStorageUsageBytes } from "@/lib/db/user";
-import { isOwnedFileUrl, sanitizeFileName } from "@/lib/file-upload";
-import { deleteObject, getObjectMetadata } from "@/lib/r2/storage";
+import {
+  getMaxUploadBytes,
+  isOwnedFileUrl,
+  sanitizeFileName,
+  type UploadCategory,
+} from "@/lib/file-upload";
+import { imageMimeMatchesMagicBytes } from "@/lib/image-magic-bytes";
+import {
+  deleteObject,
+  getObjectByteRange,
+  getObjectMetadata,
+} from "@/lib/r2/storage";
 import {
   isAtStorageLimit,
   isProOnlyItemType,
@@ -54,38 +64,72 @@ type UploadedFile = {
   fileSize: number;
 };
 
+function getUploadCategory(type: CreatableItemType): UploadCategory {
+  return type === "image" ? "image" : "file";
+}
+
+async function rejectInvalidUpload(
+  key: string,
+  message = "Invalid file reference",
+): Promise<ActionResult<UploadedFile>> {
+  try {
+    await deleteObject(key);
+  } catch {
+    // Best-effort cleanup for rejected uploads.
+  }
+
+  return { success: false, error: message };
+}
+
 /** File size is read from R2 because client-reported sizes would let users bypass the storage quota. */
 async function resolveUploadedFile(
   userId: string,
   data: { type: CreatableItemType; fileUrl?: string; fileName?: string },
   isPro: boolean,
 ): Promise<ActionResult<UploadedFile>> {
-  const invalidReference = { success: false, error: "Invalid file reference" } as const;
-
   if (!data.fileUrl || !data.fileName || !isOwnedFileUrl(data.fileUrl, userId)) {
-    return invalidReference;
+    return { success: false, error: "Invalid file reference" };
   }
 
-  const object = await getObjectMetadata(data.fileUrl);
+  const key = data.fileUrl;
+  const category = getUploadCategory(data.type);
+  const maxBytes = getMaxUploadBytes(category);
+  const object = await getObjectMetadata(key);
 
-  if (
-    !object ||
-    object.size <= 0 ||
-    (data.type === "image" && !object.contentType?.startsWith("image/"))
-  ) {
-    return invalidReference;
+  if (!object || object.size <= 0) {
+    return rejectInvalidUpload(key);
+  }
+
+  if (object.size > maxBytes) {
+    return rejectInvalidUpload(key, "Uploaded file exceeds the size limit");
+  }
+
+  if (data.type === "image" && !object.contentType?.startsWith("image/")) {
+    return rejectInvalidUpload(key);
+  }
+
+  if (data.type === "image") {
+    const headerBytes = await getObjectByteRange(key, 0, 15);
+    const mimeType = object.contentType ?? "application/octet-stream";
+
+    if (!imageMimeMatchesMagicBytes(mimeType, headerBytes)) {
+      return rejectInvalidUpload(
+        key,
+        "File contents do not match the declared image type",
+      );
+    }
   }
 
   const usedBytes = await getUserStorageUsageBytes(userId);
 
   if (isAtStorageLimit(usedBytes, object.size, isPro)) {
-    return { success: false, error: storageQuotaErrorMessage() };
+    return rejectInvalidUpload(key, storageQuotaErrorMessage());
   }
 
   return {
     success: true,
     data: {
-      fileUrl: data.fileUrl,
+      fileUrl: key,
       fileName: sanitizeFileName(data.fileName),
       fileSize: object.size,
     },
