@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyCronBearer } from "@/lib/cron-auth";
+import { purgeExpiredPendingUploads } from "@/lib/db/pending-uploads";
 import { purgeExpiredTrash } from "@/lib/db/trash";
 
 export async function GET(request: Request) {
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
   }
 
   const purgedCount = await purgeExpiredTrash();
+  const purgedUploadCount = await purgeExpiredPendingUploads();
 
-  return NextResponse.json({ purgedCount });
+  return NextResponse.json({ purgedCount, purgedUploadCount });
 }

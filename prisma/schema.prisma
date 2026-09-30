@@ -31,9 +31,24 @@ model User {
   itemTypes   ItemType[]
   collections Collection[]
   tags        Tag[]
+  pendingUploads PendingUpload[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model PendingUpload {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String   @unique
+  size      Int
+  category  String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
 }
 
 model Account {

@@ -156,17 +156,25 @@ export function CommandPalette() {
   const [items, setItems] = useState<SearchItemResult[]>([]);
   const [collections, setCollections] = useState<SearchCollectionResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const [hasError, setHasError] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+
+  if (open !== wasOpen) {
+    setWasOpen(open);
+
+    if (!open) {
+      setQuery("");
+      setItems([]);
+      setCollections([]);
+      setIsLoading(false);
+      setHasError(false);
+    }
+  }
 
   const highlightTerms = getHighlightTerms(parseSearchQuery(query));
   const hasQuery = query.trim().length > 0;
 
   function handleClose() {
-    abortRef.current?.abort();
-    setQuery("");
-    setItems([]);
-    setCollections([]);
-    setIsLoading(false);
     closePalette();
   }
 
@@ -175,10 +183,8 @@ export function CommandPalette() {
       return;
     }
 
+    const controller = new AbortController();
     const handle = window.setTimeout(() => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
       setIsLoading(true);
 
       const params = new URLSearchParams({
@@ -197,16 +203,22 @@ export function CommandPalette() {
           return (await response.json()) as SearchResponse;
         })
         .then((data) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+
           setItems(data.items);
           setCollections(data.collections);
+          setHasError(false);
         })
-        .catch((error: unknown) => {
-          if (error instanceof DOMException && error.name === "AbortError") {
+        .catch(() => {
+          if (controller.signal.aborted) {
             return;
           }
 
           setItems([]);
           setCollections([]);
+          setHasError(true);
         })
         .finally(() => {
           if (!controller.signal.aborted) {
@@ -217,6 +229,7 @@ export function CommandPalette() {
 
     return () => {
       window.clearTimeout(handle);
+      controller.abort();
     };
   }, [open, query]);
 
@@ -282,13 +295,20 @@ export function CommandPalette() {
         ]}
       >
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+          <div
+            role="status"
+            className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"
+          >
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Searching...
           </div>
         ) : null}
 
-        {showEmpty ? <CommandEmpty>No results found.</CommandEmpty> : null}
+        {showEmpty ? (
+          <CommandEmpty>
+            {hasError ? "Search failed. Try again." : "No results found."}
+          </CommandEmpty>
+        ) : null}
 
         {showQuickLinks ? (
           <CommandGroup heading="Quick links">

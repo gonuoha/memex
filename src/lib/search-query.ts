@@ -4,9 +4,29 @@ export type ParsedSearchQuery = {
   tag: string | null;
 };
 
+const MAX_TAG_LENGTH = 40;
+const MAX_TSQUERY_TERMS = 8;
+
 const TYPE_PREFIX = /^type:([a-z][a-z0-9_-]*)$/i;
-const TAG_PREFIX = /^tag:([a-z0-9][a-z0-9_-]*)$/i;
-const HASH_TAG = /^#([a-z0-9][a-z0-9_-]*)$/i;
+const TAG_PREFIX = /^tag:(\S+)$/i;
+const HASH_TAG = /^#(\S+)$/;
+const SEARCH_TERM = /[\p{L}\p{N}]+/gu;
+
+const TYPE_ALIASES: Record<string, string> = {
+  url: "link",
+  urls: "link",
+  bookmark: "link",
+  bookmarks: "link",
+  code: "snippet",
+  cmd: "command",
+  img: "image",
+};
+
+function normalizeTag(value: string): string | null {
+  const tag = value.toLowerCase();
+
+  return tag.length <= MAX_TAG_LENGTH ? tag : null;
+}
 
 export function parseSearchQuery(raw: string): ParsedSearchQuery {
   let typeSlug: string | null = null;
@@ -23,17 +43,11 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
       continue;
     }
 
-    const tagMatch = TAG_PREFIX.exec(token);
+    const tagMatch = TAG_PREFIX.exec(token) ?? HASH_TAG.exec(token);
+    const parsedTag = tagMatch ? normalizeTag(tagMatch[1]) : null;
 
-    if (tagMatch) {
-      tag = tagMatch[1].toLowerCase();
-      continue;
-    }
-
-    const hashMatch = HASH_TAG.exec(token);
-
-    if (hashMatch) {
-      tag = hashMatch[1].toLowerCase();
+    if (parsedTag) {
+      tag = parsedTag;
       continue;
     }
 
@@ -47,24 +61,41 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
   };
 }
 
-const TSQUERY_TERM = /^[a-zA-Z0-9_]+$/;
+/** Item type names are singular (`link`, `snippet`); users often type plurals or `url`. */
+export function getTypeNameCandidates(typeSlug: string): string[] {
+  const slug = typeSlug.toLowerCase();
+  const candidates = [slug];
+  const alias = TYPE_ALIASES[slug];
 
+  if (alias) {
+    candidates.push(alias);
+  }
+
+  if (slug.length > 1 && slug.endsWith("s")) {
+    candidates.push(slug.slice(0, -1));
+  }
+
+  return [...new Set(candidates)];
+}
+
+/** Letters and digits only, so terms never contain tsquery operators, quotes, or backslashes. */
 export function getSearchTerms(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9_]+/)
-    .filter((term) => TSQUERY_TERM.test(term));
+  return [...new Set(text.toLowerCase().match(SEARCH_TERM) ?? [])];
 }
 
 /** Builds a prefix-friendly `simple` tsquery string (e.g. `react:* & hook:*`). */
 export function buildPrefixTsQuery(text: string): string | null {
-  const terms = getSearchTerms(text);
+  const terms = getSearchTerms(text).slice(0, MAX_TSQUERY_TERMS);
 
   if (terms.length === 0) {
     return null;
   }
 
   return terms.map((term) => `${term}:*`).join(" & ");
+}
+
+export function buildContainsLikePattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, "\\$&")}%`;
 }
 
 export function getHighlightTerms(parsed: ParsedSearchQuery): string[] {

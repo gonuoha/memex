@@ -32,6 +32,12 @@ import {
   runWithFreeTierItemGuard,
   runWithFreeTierItemRestoreGuard,
 } from "@/lib/db/free-tier-limits";
+import {
+  consumePendingUpload,
+  findPendingUpload,
+  PendingUploadNotFoundError,
+  releasePendingUpload,
+} from "@/lib/db/pending-uploads";
 import { getUserIsPro, getUserStorageUsageBytes } from "@/lib/db/user";
 import {
   getMaxUploadBytes,
@@ -68,52 +74,70 @@ function getUploadCategory(type: CreatableItemType): UploadCategory {
   return type === "image" ? "image" : "file";
 }
 
+const INVALID_FILE_REFERENCE = "Invalid file reference";
+const EXPIRED_UPLOAD_MESSAGE = "Upload expired. Please upload the file again.";
+
 async function rejectInvalidUpload(
+  userId: string,
   key: string,
-  message = "Invalid file reference",
+  message = INVALID_FILE_REFERENCE,
 ): Promise<ActionResult<UploadedFile>> {
   try {
-    await deleteObject(key);
-  } catch {
-    // Best-effort cleanup for rejected uploads.
+    if (await releasePendingUpload(userId, key)) {
+      await deleteObject(key);
+    }
+  } catch (error) {
+    console.error("Failed to discard rejected upload:", error);
   }
 
   return { success: false, error: message };
 }
 
-/** File size is read from R2 because client-reported sizes would let users bypass the storage quota. */
+/**
+ * Only keys with an unconsumed PendingUpload are accepted, so an item can never
+ * adopt another item's object. Size is read from R2, not from the client.
+ */
 async function resolveUploadedFile(
   userId: string,
   data: { type: CreatableItemType; fileUrl?: string; fileName?: string },
   isPro: boolean,
 ): Promise<ActionResult<UploadedFile>> {
   if (!data.fileUrl || !data.fileName || !isOwnedFileUrl(data.fileUrl, userId)) {
-    return { success: false, error: "Invalid file reference" };
+    return { success: false, error: INVALID_FILE_REFERENCE };
   }
 
   const key = data.fileUrl;
   const category = getUploadCategory(data.type);
-  const maxBytes = getMaxUploadBytes(category);
+  const pending = await findPendingUpload(userId, key);
+
+  if (!pending) {
+    return { success: false, error: EXPIRED_UPLOAD_MESSAGE };
+  }
+
+  if (pending.category !== category) {
+    return { success: false, error: INVALID_FILE_REFERENCE };
+  }
+
   const object = await getObjectMetadata(key);
 
-  if (!object || object.size <= 0) {
-    return rejectInvalidUpload(key);
+  if (!object || object.size <= 0 || object.size !== pending.size) {
+    return rejectInvalidUpload(userId, key);
   }
 
-  if (object.size > maxBytes) {
-    return rejectInvalidUpload(key, "Uploaded file exceeds the size limit");
-  }
-
-  if (data.type === "image" && !object.contentType?.startsWith("image/")) {
-    return rejectInvalidUpload(key);
+  if (object.size > getMaxUploadBytes(category)) {
+    return rejectInvalidUpload(userId, key, "Uploaded file exceeds the size limit");
   }
 
   if (data.type === "image") {
-    const headerBytes = await getObjectByteRange(key, 0, 15);
-    const mimeType = object.contentType ?? "application/octet-stream";
+    if (!object.contentType?.startsWith("image/")) {
+      return rejectInvalidUpload(userId, key);
+    }
 
-    if (!imageMimeMatchesMagicBytes(mimeType, headerBytes)) {
+    const headerBytes = await getObjectByteRange(key, 0, 15);
+
+    if (!imageMimeMatchesMagicBytes(object.contentType, headerBytes)) {
       return rejectInvalidUpload(
+        userId,
         key,
         "File contents do not match the declared image type",
       );
@@ -122,8 +146,8 @@ async function resolveUploadedFile(
 
   const usedBytes = await getUserStorageUsageBytes(userId);
 
-  if (isAtStorageLimit(usedBytes, object.size, isPro)) {
-    return rejectInvalidUpload(key, storageQuotaErrorMessage());
+  if (isAtStorageLimit(usedBytes - pending.size, object.size, isPro)) {
+    return rejectInvalidUpload(userId, key, storageQuotaErrorMessage());
   }
 
   return {
@@ -192,8 +216,12 @@ export async function createItem(
   let created: ItemDetail;
 
   try {
-    created = await runWithFreeTierItemGuard(userId, isPro, (db) =>
-      createItemInDb(
+    created = await runWithFreeTierItemGuard(userId, isPro, async (db) => {
+      if (uploadedFile) {
+        await consumePendingUpload(db, userId, uploadedFile.fileUrl);
+      }
+
+      return createItemInDb(
         userId,
         {
           typeId: itemType.id,
@@ -210,11 +238,15 @@ export async function createItem(
           contentType: usesFileContent ? "file" : "text",
         },
         db,
-      ),
-    );
+      );
+    });
   } catch (error) {
     if (error instanceof FreeTierLimitExceededError) {
       return { success: false, error: itemLimitErrorMessage() };
+    }
+
+    if (error instanceof PendingUploadNotFoundError) {
+      return { success: false, error: EXPIRED_UPLOAD_MESSAGE };
     }
 
     throw error;

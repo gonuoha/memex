@@ -12,6 +12,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getR2BucketName, getR2Client } from "./client";
 
 const PRESIGNED_UPLOAD_EXPIRY_SECONDS = 5 * 60;
+/** The S3 presigner leaves Content-Type unsigned by default; signing both pins the uploaded object's type and size. */
+const PRESIGNED_UPLOAD_SIGNED_HEADERS = new Set(["content-type", "content-length"]);
 
 export async function uploadObject(
   key: string,
@@ -184,5 +186,6 @@ export async function createPresignedUploadUrl(
 
   return getSignedUrl(client, command, {
     expiresIn: PRESIGNED_UPLOAD_EXPIRY_SECONDS,
+    signableHeaders: PRESIGNED_UPLOAD_SIGNED_HEADERS,
   });
 }

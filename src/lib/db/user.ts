@@ -2,6 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type DashboardUser = {
@@ -12,13 +13,23 @@ export type DashboardUser = {
   isPro: boolean;
 };
 
-export async function getUserStorageUsageBytes(userId: string): Promise<number> {
-  const result = await prisma.item.aggregate({
-    where: { userId },
-    _sum: { fileSize: true },
-  });
+/** Counts attached files (including trashed items) plus unattached uploads that have not been cleaned up yet. */
+export async function getUserStorageUsageBytes(
+  userId: string,
+  db: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<number> {
+  const [items, pendingUploads] = await Promise.all([
+    db.item.aggregate({
+      where: { userId },
+      _sum: { fileSize: true },
+    }),
+    db.pendingUpload.aggregate({
+      where: { userId },
+      _sum: { size: true },
+    }),
+  ]);
 
-  return result._sum.fileSize ?? 0;
+  return (items._sum.fileSize ?? 0) + (pendingUploads._sum.size ?? 0);
 }
 
 export async function getUserIsPro(userId: string): Promise<boolean> {

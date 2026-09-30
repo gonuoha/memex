@@ -5,11 +5,16 @@ import { searchCollections, searchItems } from "@/lib/db/search";
 import { checkSearchRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 import { parseSearchQueryParams } from "@/lib/validations/search";
 
+const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" };
+
 export async function GET(request: Request) {
   const session = await auth();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: NO_STORE_HEADERS },
+    );
   }
 
   const rateLimit = await checkSearchRateLimit(session.user.id);
@@ -24,7 +29,7 @@ export async function GET(request: Request) {
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid search parameters" },
-      { status: 400 },
+      { status: 400, headers: NO_STORE_HEADERS },
     );
   }
 
@@ -35,5 +40,8 @@ export async function GET(request: Request) {
     searchCollections(session.user.id, q, limit),
   ]);
 
-  return NextResponse.json({ items, collections });
+  return NextResponse.json(
+    { items, collections },
+    { headers: NO_STORE_HEADERS },
+  );
 }

@@ -31,12 +31,21 @@ type UploadUrlResponse = {
   fileSize: number;
 };
 
+class UploadAbortedError extends Error {
+  constructor() {
+    super("Upload cancelled");
+    this.name = "UploadAbortedError";
+  }
+}
+
 async function requestUploadUrl(
   file: File,
   category: UploadCategory,
+  signal: AbortSignal,
 ): Promise<UploadUrlResponse> {
   const response = await fetch("/api/items/upload-url", {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       category,
@@ -60,14 +69,25 @@ async function uploadWithProgress(
   file: File,
   category: UploadCategory,
   onProgress: (progress: number) => void,
+  signal: AbortSignal,
 ): Promise<UploadedFile> {
   const { uploadUrl, key, fileName, fileSize } = await requestUploadUrl(
     file,
     category,
+    signal,
   );
 
   return new Promise<UploadedFile>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new UploadAbortedError());
+      return;
+    }
+
     const xhr = new XMLHttpRequest();
+    signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.addEventListener("abort", () => {
+      reject(new UploadAbortedError());
+    });
     xhr.open("PUT", uploadUrl);
     xhr.setRequestHeader(
       "Content-Type",
@@ -108,6 +128,7 @@ export function FileUpload({
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
@@ -116,6 +137,12 @@ export function FileUpload({
       }
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const clearPreview = useCallback(() => {
     setPreviewUrl((current) => {
@@ -139,24 +166,53 @@ export function FileUpload({
         setPreviewUrl(URL.createObjectURL(file));
       }
 
+      const controller = new AbortController();
+      abortRef.current = controller;
       setIsUploading(true);
       setProgress(0);
 
       try {
-        const uploaded = await uploadWithProgress(file, category, setProgress);
+        const uploaded = await uploadWithProgress(
+          file,
+          category,
+          setProgress,
+          controller.signal,
+        );
         onChange(uploaded);
         toast.success("File uploaded");
       } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
         clearPreview();
         onChange(null);
         toast.error(error instanceof Error ? error.message : "Upload failed");
       } finally {
-        setIsUploading(false);
-        setProgress(0);
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
+
+        if (!controller.signal.aborted) {
+          setIsUploading(false);
+          setProgress(0);
+        }
       }
     },
     [category, clearPreview, disabled, isUploading, onChange],
   );
+
+  function handleCancel() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    clearPreview();
+    setIsUploading(false);
+    setProgress(0);
+
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  }
 
   function handleClear() {
     clearPreview();
@@ -287,13 +343,30 @@ export function FileUpload({
 
       {isUploading ? (
         <div className="space-y-2">
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            role="progressbar"
+            aria-label={`Uploading ${label}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            className="h-2 overflow-hidden rounded-full bg-muted"
+          >
             <div
               className="h-full rounded-full bg-primary transition-[width]"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <p className="text-xs text-muted-foreground">{progress}%</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">{progress}%</p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>

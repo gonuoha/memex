@@ -44,6 +44,18 @@ vi.mock("@/lib/db/free-tier-limits", () => ({
   runWithFreeTierItemRestoreGuard: vi.fn(),
 }));
 
+vi.mock("@/lib/db/pending-uploads", () => ({
+  PendingUploadNotFoundError: class PendingUploadNotFoundError extends Error {
+    constructor() {
+      super("Pending upload not found");
+      this.name = "PendingUploadNotFoundError";
+    }
+  },
+  consumePendingUpload: vi.fn(),
+  findPendingUpload: vi.fn(),
+  releasePendingUpload: vi.fn(),
+}));
+
 vi.mock("@/lib/r2/storage", () => ({
   deleteObject: vi.fn(),
   getObjectByteRange: vi.fn(),
@@ -67,6 +79,12 @@ import {
   runWithFreeTierItemGuard,
   runWithFreeTierItemRestoreGuard,
 } from "@/lib/db/free-tier-limits";
+import {
+  consumePendingUpload,
+  findPendingUpload,
+  PendingUploadNotFoundError,
+  releasePendingUpload,
+} from "@/lib/db/pending-uploads";
 import { getUserIsPro, getUserStorageUsageBytes } from "@/lib/db/user";
 import {
   deleteObject,
@@ -103,6 +121,13 @@ const mockRunWithFreeTierItemGuard = vi.mocked(runWithFreeTierItemGuard);
 const mockDeleteObject = vi.mocked(deleteObject);
 const mockGetObjectByteRange = vi.mocked(getObjectByteRange);
 const mockGetObjectMetadata = vi.mocked(getObjectMetadata);
+const mockConsumePendingUpload = vi.mocked(consumePendingUpload);
+const mockFindPendingUpload = vi.mocked(findPendingUpload);
+const mockReleasePendingUpload = vi.mocked(releasePendingUpload);
+
+function mockPendingUpload(key: string, size: number, category: "image" | "file") {
+  mockFindPendingUpload.mockResolvedValue({ key, size, category });
+}
 
 const pngHeader = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
@@ -144,6 +169,9 @@ describe("createItem", () => {
     mockRunWithFreeTierItemGuard.mockImplementation(async (_userId, _isPro, create) =>
       create({} as never),
     );
+    mockFindPendingUpload.mockResolvedValue(null);
+    mockReleasePendingUpload.mockResolvedValue(true);
+    mockConsumePendingUpload.mockResolvedValue(undefined);
   });
 
   it("returns unauthorized when there is no session", async () => {
@@ -351,11 +379,12 @@ describe("createItem", () => {
     mockGetUserIsPro.mockResolvedValue(true);
     mockGetUserItemStats.mockResolvedValue({ ...defaultStats, itemCount: 50 });
     mockCreateItemInDb.mockResolvedValue(createdItem);
+    mockPendingUpload("users/user-1/abc123/notes.pdf", 4096, "file");
     mockGetObjectMetadata.mockResolvedValue({
       size: 4096,
       contentType: "application/pdf",
     });
-    mockGetUserStorageUsageBytes.mockResolvedValue(0);
+    mockGetUserStorageUsageBytes.mockResolvedValue(4096);
 
     const result = await createItem({
       type: "file",
@@ -367,6 +396,11 @@ describe("createItem", () => {
 
     expect(result).toEqual({ success: true, data: createdItem });
     expect(mockGetObjectMetadata).toHaveBeenCalledWith("users/user-1/abc123/notes.pdf");
+    expect(mockConsumePendingUpload).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-1",
+      "users/user-1/abc123/notes.pdf",
+    );
     expect(mockCreateItemInDb).toHaveBeenCalledWith(
       "user-1",
       expect.objectContaining({
@@ -388,6 +422,7 @@ describe("createItem", () => {
       color: "#64748b",
     });
     mockGetUserIsPro.mockResolvedValue(true);
+    mockPendingUpload("users/user-1/abc123/notes.pdf", 1024, "file");
     mockGetObjectMetadata.mockResolvedValue(null);
 
     const result = await createItem({
@@ -411,6 +446,7 @@ describe("createItem", () => {
       color: "#ec4899",
     });
     mockGetUserIsPro.mockResolvedValue(true);
+    mockPendingUpload("users/user-1/abc123/notes.pdf", 1024, "image");
     mockGetObjectMetadata.mockResolvedValue({
       size: 1024,
       contentType: "application/pdf",
@@ -438,6 +474,7 @@ describe("createItem", () => {
       color: "#ec4899",
     });
     mockGetUserIsPro.mockResolvedValue(true);
+    mockPendingUpload("users/user-1/abc123/photo.png", 1024, "image");
     mockGetObjectMetadata.mockResolvedValue({
       size: 1024,
       contentType: "image/png",
@@ -470,12 +507,13 @@ describe("createItem", () => {
     });
     mockGetUserIsPro.mockResolvedValue(true);
     mockCreateItemInDb.mockResolvedValue(createdItem);
+    mockPendingUpload("users/user-1/abc123/photo.png", 2048, "image");
     mockGetObjectMetadata.mockResolvedValue({
       size: 2048,
       contentType: "image/png",
     });
     mockGetObjectByteRange.mockResolvedValue(pngHeader);
-    mockGetUserStorageUsageBytes.mockResolvedValue(0);
+    mockGetUserStorageUsageBytes.mockResolvedValue(2048);
 
     const result = await createItem({
       type: "image",
@@ -503,6 +541,7 @@ describe("createItem", () => {
       color: "#64748b",
     });
     mockGetUserIsPro.mockResolvedValue(true);
+    mockPendingUpload("users/user-1/abc123/huge.pdf", 11 * 1024 * 1024, "file");
     mockGetObjectMetadata.mockResolvedValue({
       size: 11 * 1024 * 1024,
       contentType: "application/pdf",
@@ -533,11 +572,12 @@ describe("createItem", () => {
       color: "#64748b",
     });
     mockGetUserIsPro.mockResolvedValue(true);
+    mockPendingUpload("users/user-1/abc123/notes.pdf", 2048, "file");
     mockGetObjectMetadata.mockResolvedValue({
       size: 2048,
       contentType: "application/pdf",
     });
-    mockGetUserStorageUsageBytes.mockResolvedValue(1024 * 1024 * 1024 - 1024);
+    mockGetUserStorageUsageBytes.mockResolvedValue(1024 * 1024 * 1024 + 1024);
 
     const result = await createItem({
       type: "file",
@@ -552,6 +592,104 @@ describe("createItem", () => {
       error: "Storage quota exceeded. Pro accounts are limited to 1 GB of uploads.",
     });
     expect(mockCreateItemInDb).not.toHaveBeenCalled();
+  });
+
+  describe("pending upload verification", () => {
+    const key = "users/user-1/abc123/notes.pdf";
+
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+      mockGetItemTypeBySlug.mockResolvedValue({
+        id: "type-file",
+        name: "file",
+        icon: "File",
+        color: "#64748b",
+      });
+      mockGetUserIsPro.mockResolvedValue(true);
+      mockCreateItemInDb.mockResolvedValue(createdItem);
+      mockGetObjectMetadata.mockResolvedValue({
+        size: 4096,
+        contentType: "application/pdf",
+      });
+      mockGetUserStorageUsageBytes.mockResolvedValue(4096);
+    });
+
+    function createFileItem() {
+      return createItem({
+        type: "file",
+        title: "Notes",
+        fileUrl: key,
+        fileName: "notes.pdf",
+        fileSize: 4096,
+      });
+    }
+
+    it("rejects keys without a pending upload and leaves the object untouched", async () => {
+      const result = await createFileItem();
+
+      expect(result).toEqual({
+        success: false,
+        error: "Upload expired. Please upload the file again.",
+      });
+      expect(mockFindPendingUpload).toHaveBeenCalledWith("user-1", key);
+      expect(mockGetObjectMetadata).not.toHaveBeenCalled();
+      expect(mockDeleteObject).not.toHaveBeenCalled();
+      expect(mockCreateItemInDb).not.toHaveBeenCalled();
+    });
+
+    it("rejects pending uploads issued for a different category", async () => {
+      mockPendingUpload(key, 4096, "image");
+
+      const result = await createFileItem();
+
+      expect(result).toEqual({ success: false, error: "Invalid file reference" });
+      expect(mockDeleteObject).not.toHaveBeenCalled();
+      expect(mockCreateItemInDb).not.toHaveBeenCalled();
+    });
+
+    it("discards uploads whose stored size differs from the reserved size", async () => {
+      mockPendingUpload(key, 1024, "file");
+
+      const result = await createFileItem();
+
+      expect(result).toEqual({ success: false, error: "Invalid file reference" });
+      expect(mockReleasePendingUpload).toHaveBeenCalledWith("user-1", key);
+      expect(mockDeleteObject).toHaveBeenCalledWith(key);
+      expect(mockCreateItemInDb).not.toHaveBeenCalled();
+    });
+
+    it("keeps the object when the pending upload was already consumed", async () => {
+      mockPendingUpload(key, 1024, "file");
+      mockReleasePendingUpload.mockResolvedValue(false);
+
+      const result = await createFileItem();
+
+      expect(result).toEqual({ success: false, error: "Invalid file reference" });
+      expect(mockDeleteObject).not.toHaveBeenCalled();
+    });
+
+    it("excludes the upload's own reservation from the quota check", async () => {
+      mockPendingUpload(key, 4096, "file");
+      mockGetUserStorageUsageBytes.mockResolvedValue(1024 * 1024 * 1024);
+
+      const result = await createFileItem();
+
+      expect(result).toEqual({ success: true, data: createdItem });
+    });
+
+    it("returns an expiry error when the pending upload is purged before the insert", async () => {
+      mockPendingUpload(key, 4096, "file");
+      mockConsumePendingUpload.mockRejectedValue(new PendingUploadNotFoundError());
+
+      const result = await createFileItem();
+
+      expect(result).toEqual({
+        success: false,
+        error: "Upload expired. Please upload the file again.",
+      });
+      expect(mockCreateItemInDb).not.toHaveBeenCalled();
+      expect(mockDeleteObject).not.toHaveBeenCalled();
+    });
   });
 
   it("rejects item creation when a free user is at the item limit", async () => {

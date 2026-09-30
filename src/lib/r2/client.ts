@@ -16,6 +16,11 @@ export function getR2Client() {
   return new S3Client({
     region: "auto",
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    // Presigned URLs must stay on the account origin allowed by CSP connect-src.
+    forcePathStyle: true,
+    // Default checksums embed an empty-body CRC32 in presigned PUT URLs, which real uploads then fail.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: getRequiredEnv("R2_ACCESS_KEY_ID"),
       secretAccessKey: getRequiredEnv("R2_SECRET_ACCESS_KEY"),

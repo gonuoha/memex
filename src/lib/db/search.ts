@@ -1,11 +1,11 @@
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
+  buildContainsLikePattern,
   buildPrefixTsQuery,
+  getTypeNameCandidates,
   parseSearchQuery,
-  type ParsedSearchQuery,
 } from "@/lib/search-query";
-
-import { activeItemWhere } from "./item-filters";
 
 export type SearchItemType = {
   id: string;
@@ -35,111 +35,10 @@ export type SearchCollectionResult = {
 
 export type SearchItemsOptions = {
   limit: number;
-  typeSlug?: string | null;
-  tag?: string | null;
 };
 
 const RECENT_ITEMS_LIMIT = 8;
-
-const itemTagSelect = {
-  tags: {
-    select: {
-      tag: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
-    },
-  },
-} as const;
-
-function buildSnippet(
-  description: string | null,
-  content: string | null,
-): string | null {
-  const source = description?.trim() || content?.trim();
-
-  if (!source) {
-    return null;
-  }
-
-  const normalized = source.replace(/\s+/g, " ");
-
-  if (normalized.length <= 160) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, 157)}...`;
-}
-
-function mapItemsWithTags(
-  rows: {
-    id: string;
-    title: string;
-    description: string | null;
-    content: string | null;
-    type: SearchItemType;
-    tags: { tag: SearchItemTag }[];
-  }[],
-  snippetById?: Map<string, string | null>,
-): SearchItemResult[] {
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    snippet:
-      snippetById?.get(row.id) ??
-      buildSnippet(row.description, row.content),
-    type: row.type,
-    tags: row.tags.map((entry) => entry.tag),
-  }));
-}
-
-async function getRecentSearchItems(
-  userId: string,
-  options: SearchItemsOptions,
-): Promise<SearchItemResult[]> {
-  const parsedType = options.typeSlug?.trim().toLowerCase() || null;
-  const parsedTag = options.tag?.trim().toLowerCase() || null;
-
-  const items = await prisma.item.findMany({
-    where: activeItemWhere(userId, {
-      ...(parsedType
-        ? { type: { name: parsedType } }
-        : {}),
-      ...(parsedTag
-        ? {
-            tags: {
-              some: {
-                tag: {
-                  name: { equals: parsedTag, mode: "insensitive" },
-                },
-              },
-            },
-          }
-        : {}),
-    }),
-    orderBy: { updatedAt: "desc" },
-    take: options.limit,
-    select: {
-      id: true,
-      title: true,
-      description: true,
-      content: true,
-      type: {
-        select: {
-          id: true,
-          name: true,
-          icon: true,
-          color: true,
-        },
-      },
-      ...itemTagSelect,
-    },
-  });
-
-  return mapItemsWithTags(items);
-}
+const SNIPPET_MAX_LENGTH = 160;
 
 type RawSearchRow = {
   id: string;
@@ -149,8 +48,85 @@ type RawSearchRow = {
   type_name: string;
   type_icon: string | null;
   type_color: string | null;
-  rank: number;
 };
+
+type ItemSearchSql = {
+  snippet: Prisma.Sql;
+  match: Prisma.Sql;
+  orderBy: Prisma.Sql;
+};
+
+export function normalizeSnippet(value: string | null): string | null {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.length <= SNIPPET_MAX_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, SNIPPET_MAX_LENGTH - 3)}...`;
+}
+
+const PLAIN_SNIPPET_SQL = Prisma.sql`left(coalesce(nullif(btrim(i."description"), ''), i."content", ''), 200)`;
+
+function buildRecentItemsSql(): ItemSearchSql {
+  return {
+    snippet: PLAIN_SNIPPET_SQL,
+    match: Prisma.empty,
+    orderBy: Prisma.sql`i."updatedAt" DESC`,
+  };
+}
+
+/**
+ * Match predicates are only emitted when they apply (no `$1 IS NULL OR ...`
+ * guards) so the planner can use the tsvector GIN and title trigram indexes.
+ */
+function buildTextSearchSql(text: string): ItemSearchSql {
+  const tsQuery = buildPrefixTsQuery(text);
+  const titleSimilarity = Prisma.sql`similarity(i."title", ${text}) * 0.4`;
+  const titleMatch = Prisma.sql`i."title" ILIKE ${buildContainsLikePattern(text)} OR i."title" % ${text}`;
+
+  if (!tsQuery) {
+    return {
+      snippet: PLAIN_SNIPPET_SQL,
+      match: Prisma.sql`AND (${titleMatch})`,
+      orderBy: Prisma.sql`${titleSimilarity} DESC, i."updatedAt" DESC`,
+    };
+  }
+
+  const query = Prisma.sql`to_tsquery('simple', ${tsQuery})`;
+
+  return {
+    snippet: Prisma.sql`ts_headline(
+      'simple',
+      concat_ws(' ', nullif(btrim(i."description"), ''), left(i."content", 2000)),
+      ${query},
+      'StartSel="", StopSel="", MaxFragments=1, MaxWords=20, MinWords=5, ShortWord=2'
+    )`,
+    match: Prisma.sql`AND (i."searchVector" @@ ${query} OR ${titleMatch})`,
+    orderBy: Prisma.sql`ts_rank(i."searchVector", ${query}) + ${titleSimilarity} DESC, i."updatedAt" DESC`,
+  };
+}
+
+function buildItemFilterSql(typeSlug: string | null, tag: string | null): Prisma.Sql {
+  const typeFilter = typeSlug
+    ? Prisma.sql`AND lower(it."name") = ANY(${getTypeNameCandidates(typeSlug)}::text[])`
+    : Prisma.empty;
+  const tagFilter = tag
+    ? Prisma.sql`AND EXISTS (
+        SELECT 1
+        FROM "ItemTag" itg
+        INNER JOIN "Tag" t ON t."id" = itg."tagId"
+        WHERE itg."itemId" = i."id"
+          AND lower(t."name") = ${tag}
+      )`
+    : Prisma.empty;
+
+  return Prisma.sql`${typeFilter} ${tagFilter}`;
+}
 
 async function fetchTagsForItems(
   itemIds: string[],
@@ -183,80 +159,37 @@ async function fetchTagsForItems(
   return map;
 }
 
-async function searchItemsWithFullText(
+export async function searchItems(
   userId: string,
-  parsed: ParsedSearchQuery,
+  query: string,
   options: SearchItemsOptions,
 ): Promise<SearchItemResult[]> {
-  const limit = options.limit;
-  const typeSlug =
-    options.typeSlug?.trim().toLowerCase() ||
-    parsed.typeSlug?.trim().toLowerCase() ||
-    null;
-  const tag =
-    options.tag?.trim().toLowerCase() ||
-    parsed.tag?.trim().toLowerCase() ||
-    null;
-  const text = parsed.text.trim();
-  const prefixQuery = buildPrefixTsQuery(text);
-  const safeIlikeText = text.replace(/[%_]/g, " ").trim();
-  const ilikePattern = safeIlikeText ? `%${safeIlikeText}%` : null;
+  const parsed = parseSearchQuery(query);
+  const hasFilters = Boolean(parsed.typeSlug || parsed.tag);
+  const search = parsed.text
+    ? buildTextSearchSql(parsed.text)
+    : buildRecentItemsSql();
+  const limit =
+    parsed.text || hasFilters
+      ? options.limit
+      : Math.min(options.limit, RECENT_ITEMS_LIMIT);
 
   const rows = await prisma.$queryRaw<RawSearchRow[]>`
     SELECT
       i."id" AS id,
       i."title" AS title,
-      CASE
-        WHEN ${prefixQuery}::text IS NOT NULL THEN
-          ts_headline(
-            'simple',
-            coalesce(i."description", left(i."content", 500), ''),
-            to_tsquery('simple', ${prefixQuery}),
-            'StartSel="", StopSel="", MaxFragments=1, MaxWords=20, MinWords=5, ShortWord=2'
-          )
-        ELSE left(coalesce(i."description", i."content", ''), 160)
-      END AS snippet,
+      ${search.snippet} AS snippet,
       it."id" AS type_id,
       it."name" AS type_name,
       it."icon" AS type_icon,
-      it."color" AS type_color,
-      (
-        coalesce(
-          CASE
-            WHEN ${prefixQuery}::text IS NOT NULL THEN
-              ts_rank(i."searchVector", to_tsquery('simple', ${prefixQuery}))
-            ELSE 0
-          END,
-          0
-        )
-        + coalesce(similarity(i."title", ${text}), 0) * 0.4
-        + extract(epoch from i."updatedAt") / 1e12
-      ) AS rank
+      it."color" AS type_color
     FROM "Item" i
     INNER JOIN "ItemType" it ON it."id" = i."typeId"
     WHERE i."userId" = ${userId}
       AND i."deletedAt" IS NULL
-      AND (${typeSlug}::text IS NULL OR lower(it."name") = ${typeSlug})
-      AND (
-        ${tag}::text IS NULL
-        OR EXISTS (
-          SELECT 1
-          FROM "ItemTag" itg
-          INNER JOIN "Tag" t ON t."id" = itg."tagId"
-          WHERE itg."itemId" = i."id"
-            AND lower(t."name") = ${tag}
-        )
-      )
-      AND (
-        ${text} = ''
-        OR (
-          ${prefixQuery}::text IS NOT NULL
-          AND i."searchVector" @@ to_tsquery('simple', ${prefixQuery})
-        )
-        OR (${ilikePattern}::text IS NOT NULL AND i."title" ILIKE ${ilikePattern})
-        OR similarity(i."title", ${text}) > 0.25
-      )
-    ORDER BY rank DESC, i."updatedAt" DESC
+      ${buildItemFilterSql(parsed.typeSlug, parsed.tag)}
+      ${search.match}
+    ORDER BY ${search.orderBy}
     LIMIT ${limit}
   `;
 
@@ -265,7 +198,7 @@ async function searchItemsWithFullText(
   return rows.map((row) => ({
     id: row.id,
     title: row.title,
-    snippet: row.snippet?.trim() ? row.snippet.trim() : null,
+    snippet: normalizeSnippet(row.snippet),
     type: {
       id: row.type_id,
       name: row.type_name,
@@ -276,38 +209,10 @@ async function searchItemsWithFullText(
   }));
 }
 
-export async function searchItems(
-  userId: string,
-  query: string,
-  options: SearchItemsOptions,
-): Promise<SearchItemResult[]> {
-  const parsed = parseSearchQuery(query);
-  const hasFilters = Boolean(parsed.typeSlug || parsed.tag);
-  const hasText = parsed.text.trim().length > 0;
-
-  if (!hasText && !hasFilters) {
-    return getRecentSearchItems(userId, {
-      ...options,
-      limit: Math.min(options.limit, RECENT_ITEMS_LIMIT),
-    });
-  }
-
-  if (!hasText && hasFilters) {
-    return getRecentSearchItems(userId, {
-      ...options,
-      typeSlug: parsed.typeSlug,
-      tag: parsed.tag,
-    });
-  }
-
-  return searchItemsWithFullText(userId, parsed, options);
-}
-
 type RawCollectionRow = {
   id: string;
   name: string;
   item_count: bigint;
-  rank: number;
 };
 
 export async function searchCollections(
@@ -316,7 +221,11 @@ export async function searchCollections(
   limit: number,
 ): Promise<SearchCollectionResult[]> {
   const parsed = parseSearchQuery(query);
-  const text = parsed.text.trim();
+  const text = parsed.text;
+
+  if (!text && (parsed.typeSlug || parsed.tag)) {
+    return [];
+  }
 
   if (!text) {
     const collections = await prisma.collection.findMany({
@@ -347,8 +256,7 @@ export async function searchCollections(
     }));
   }
 
-  const safeIlikeText = text.replace(/[%_]/g, " ").trim();
-  const ilikePattern = `%${safeIlikeText}%`;
+  const likePattern = buildContainsLikePattern(text);
 
   const rows = await prisma.$queryRaw<RawCollectionRow[]>`
     SELECT
@@ -360,19 +268,15 @@ export async function searchCollections(
         INNER JOIN "Item" i ON i."id" = ic."itemId"
         WHERE ic."collectionId" = c."id"
           AND i."deletedAt" IS NULL
-      ) AS item_count,
-      (
-        coalesce(similarity(c."name", ${text}), 0)
-        + CASE WHEN c."name" ILIKE ${ilikePattern} THEN 0.5 ELSE 0 END
-        + extract(epoch from c."updatedAt") / 1e12
-      ) AS rank
+      ) AS item_count
     FROM "Collection" c
     WHERE c."userId" = ${userId}
-      AND (
-        c."name" ILIKE ${ilikePattern}
-        OR similarity(c."name", ${text}) > 0.2
-      )
-    ORDER BY rank DESC, c."name" ASC
+      AND (c."name" ILIKE ${likePattern} OR c."name" % ${text})
+    ORDER BY
+      similarity(c."name", ${text})
+        + CASE WHEN c."name" ILIKE ${likePattern} THEN 0.5 ELSE 0 END
+        DESC,
+      c."updatedAt" DESC
     LIMIT ${limit}
   `;
 
