@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { deleteItem, updateItem } from "@/actions/items";
+import { deleteItem, restoreItem, updateItem } from "@/actions/items";
 import { explainCode, optimizePrompt } from "@/actions/ai";
 import {
   type SelectableCollection,
@@ -701,9 +701,27 @@ function ItemDrawerPanel({
       }
 
       setIsDeleteOpen(false);
-      toast.success("Item deleted");
+      const deletedItemId = item.id;
       closeItem();
       router.refresh();
+      toast.success("Moved to trash", {
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void restoreItem(deletedItemId)
+              .then((restoreResult) => {
+                if (!restoreResult.success) {
+                  toast.error(restoreResult.error);
+                  return;
+                }
+
+                toast.success("Item restored");
+                router.refresh();
+              })
+              .catch(() => toast.error("Failed to restore item"));
+          },
+        },
+      });
     });
   }
 
@@ -837,11 +855,11 @@ function ItemDrawerPanel({
       <ConfirmDeleteDialog
         open={isDeleteOpen}
         onOpenChange={setIsDeleteOpen}
-        title="Delete item?"
+        title="Move to trash?"
         description={
           <>
-            This will permanently delete &ldquo;{item?.title}&rdquo;. This action
-            cannot be undone.
+            &ldquo;{item?.title}&rdquo; will be moved to trash. You can restore
+            it from the Trash page for up to 30 days.
           </>
         }
         isDeleting={isDeleting}

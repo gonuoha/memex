@@ -12,6 +12,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 
 import type { CollectionItemType } from "./collections";
+import { activeItemWhere } from "./item-filters";
+import { daysUntilPermanentDeletion } from "./trash-retention";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
@@ -79,6 +81,15 @@ export type UserItemStats = {
   favoriteItemCount: number;
   favoriteCollectionCount: number;
   pinnedCount: number;
+  trashCount: number;
+};
+
+export type TrashedItem = {
+  id: string;
+  title: string;
+  deletedAt: Date;
+  daysUntilPurge: number;
+  type: CollectionItemType;
 };
 
 const itemDetailSelect = {
@@ -253,7 +264,7 @@ export async function getItemById(
   itemId: string,
 ): Promise<ItemDetail | null> {
   const item = await prisma.item.findFirst({
-    where: { id: itemId, userId },
+    where: activeItemWhere(userId, { id: itemId }),
     select: itemDetailSelect,
   });
 
@@ -337,7 +348,7 @@ export async function updateItem(
   data: UpdateItemData,
 ): Promise<ItemDetail | null> {
   const existing = await prisma.item.findFirst({
-    where: { id: itemId, userId },
+    where: activeItemWhere(userId, { id: itemId }),
     select: { id: true },
   });
 
@@ -390,7 +401,7 @@ export async function toggleItemFavorite(
   itemId: string,
 ): Promise<ToggleItemFavoriteResult | null> {
   const existing = await prisma.item.findFirst({
-    where: { id: itemId, userId },
+    where: activeItemWhere(userId, { id: itemId }),
     select: {
       id: true,
       isFavorite: true,
@@ -438,7 +449,7 @@ export async function toggleItemPin(
   itemId: string,
 ): Promise<ToggleItemPinResult | null> {
   const existing = await prisma.item.findFirst({
-    where: { id: itemId, userId },
+    where: activeItemWhere(userId, { id: itemId }),
     select: {
       id: true,
       isPinned: true,
@@ -477,7 +488,6 @@ export async function toggleItemPin(
 
 export type DeleteItemResult = {
   typeName: string;
-  fileUrl: string | null;
 };
 
 export async function deleteItem(
@@ -485,7 +495,82 @@ export async function deleteItem(
   itemId: string,
 ): Promise<DeleteItemResult | null> {
   const existing = await prisma.item.findFirst({
-    where: { id: itemId, userId },
+    where: activeItemWhere(userId, { id: itemId }),
+    select: {
+      id: true,
+      type: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  await prisma.item.update({
+    where: { id: itemId },
+    data: {
+      deletedAt: new Date(),
+      isPinned: false,
+    },
+  });
+
+  return {
+    typeName: existing.type.name,
+  };
+}
+
+export type RestoreItemResult = {
+  id: string;
+  typeName: string;
+};
+
+export async function restoreItem(
+  userId: string,
+  itemId: string,
+  db: DbClient = prisma,
+): Promise<RestoreItemResult | null> {
+  const existing = await db.item.findFirst({
+    where: { id: itemId, userId, deletedAt: { not: null } },
+    select: {
+      id: true,
+      type: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  await db.item.update({
+    where: { id: itemId },
+    data: { deletedAt: null },
+  });
+
+  return {
+    id: existing.id,
+    typeName: existing.type.name,
+  };
+}
+
+export type PermanentDeleteItemResult = {
+  typeName: string;
+  fileUrl: string | null;
+};
+
+export async function permanentlyDeleteItem(
+  userId: string,
+  itemId: string,
+): Promise<PermanentDeleteItemResult | null> {
+  const existing = await prisma.item.findFirst({
+    where: { id: itemId, userId, deletedAt: { not: null } },
     select: {
       id: true,
       fileUrl: true,
@@ -501,9 +586,13 @@ export async function deleteItem(
     return null;
   }
 
-  await prisma.item.delete({
-    where: { id: itemId },
+  const { count } = await prisma.item.deleteMany({
+    where: { id: itemId, userId, deletedAt: { not: null } },
   });
+
+  if (count === 0) {
+    return null;
+  }
 
   return {
     typeName: existing.type.name,
@@ -552,7 +641,7 @@ export async function getSearchableItems(
   userId: string,
 ): Promise<SearchableItem[]> {
   const items = await prisma.item.findMany({
-    where: { userId },
+    where: activeItemWhere(userId),
     orderBy: { updatedAt: "desc" },
     select: {
       id: true,
@@ -582,7 +671,7 @@ export async function getSearchableItems(
 
 export async function getFavoriteItems(userId: string): Promise<DashboardItem[]> {
   const items = await prisma.item.findMany({
-    where: { userId, isFavorite: true },
+    where: activeItemWhere(userId, { isFavorite: true }),
     orderBy: { updatedAt: "desc" },
     select: itemSelect,
   });
@@ -595,7 +684,7 @@ export async function getPinnedItems(
   limit = 20,
 ): Promise<DashboardItem[]> {
   const items = await prisma.item.findMany({
-    where: { userId, isPinned: true },
+    where: activeItemWhere(userId, { isPinned: true }),
     orderBy: { updatedAt: "desc" },
     take: limit,
     select: itemSelect,
@@ -609,7 +698,7 @@ export async function getRecentItems(
   limit = 10,
 ): Promise<DashboardItem[]> {
   const items = await prisma.item.findMany({
-    where: { userId },
+    where: activeItemWhere(userId),
     orderBy: { updatedAt: "desc" },
     take: limit,
     select: itemSelect,
@@ -643,7 +732,7 @@ export async function getItemsByTypePaginated(
   page: number,
   pageSize: number = ITEMS_PER_PAGE,
 ): Promise<PaginatedResult<DashboardItem>> {
-  const where = { userId, typeId };
+  const where = activeItemWhere(userId, { typeId });
   const totalCount = await prisma.item.count({ where });
   const totalPages = getTotalPages(totalCount, pageSize);
   const normalizedPage = normalizePage(page, totalPages);
@@ -670,12 +759,11 @@ export async function getItemsByCollectionPaginated(
   page: number,
   pageSize: number = COLLECTIONS_PER_PAGE,
 ): Promise<PaginatedResult<DashboardItem>> {
-  const where = {
-    userId,
+  const where = activeItemWhere(userId, {
     collections: {
       some: { collectionId },
     },
-  };
+  });
   const totalCount = await prisma.item.count({ where });
   const totalPages = getTotalPages(totalCount, pageSize);
   const normalizedPage = normalizePage(page, totalPages);
@@ -702,7 +790,7 @@ export async function getFileItemsByTypePaginated(
   page: number,
   pageSize: number = ITEMS_PER_PAGE,
 ): Promise<PaginatedResult<FileListItem>> {
-  const where = { userId, typeId };
+  const where = activeItemWhere(userId, { typeId });
   const totalCount = await prisma.item.count({ where });
   const totalPages = getTotalPages(totalCount, pageSize);
   const normalizedPage = normalizePage(page, totalPages);
@@ -732,13 +820,12 @@ export async function getFileItemsByIds(
   }
 
   const items = await prisma.item.findMany({
-    where: {
-      userId,
+    where: activeItemWhere(userId, {
       id: { in: itemIds },
       type: {
         name: { equals: "file", mode: "insensitive" },
       },
-    },
+    }),
     orderBy: pinnedFirstByCreatedAt,
     select: fileItemSelect,
   });
@@ -760,6 +847,7 @@ export type SidebarItemType = SystemItemType & {
 export type SidebarItemCounts = {
   favoriteCount: number;
   pinnedCount: number;
+  trashCount: number;
 };
 
 export async function getSystemItemTypes(): Promise<SystemItemType[]> {
@@ -783,7 +871,7 @@ export async function getSidebarItemTypes(
     getSystemItemTypes(),
     prisma.item.groupBy({
       by: ["typeId"],
-      where: { userId },
+      where: activeItemWhere(userId),
       _count: { _all: true },
     }),
   ]);
@@ -806,12 +894,14 @@ export const getUserItemStats = cache(
     favoriteItemCount,
     favoriteCollectionCount,
     pinnedCount,
+    trashCount,
   ] = await Promise.all([
-    prisma.item.count({ where: { userId } }),
+    prisma.item.count({ where: activeItemWhere(userId) }),
     prisma.collection.count({ where: { userId } }),
-    prisma.item.count({ where: { userId, isFavorite: true } }),
+    prisma.item.count({ where: activeItemWhere(userId, { isFavorite: true }) }),
     prisma.collection.count({ where: { userId, isFavorite: true } }),
-    prisma.item.count({ where: { userId, isPinned: true } }),
+    prisma.item.count({ where: activeItemWhere(userId, { isPinned: true }) }),
+    prisma.item.count({ where: { userId, deletedAt: { not: null } } }),
   ]);
 
   return {
@@ -820,9 +910,58 @@ export const getUserItemStats = cache(
     favoriteItemCount,
     favoriteCollectionCount,
     pinnedCount,
+    trashCount,
   };
   },
 );
+
+export async function getTrashedItemsPaginated(
+  userId: string,
+  page: number,
+  pageSize: number = ITEMS_PER_PAGE,
+): Promise<PaginatedResult<TrashedItem>> {
+  const where = { userId, deletedAt: { not: null } };
+  const totalCount = await prisma.item.count({ where });
+  const totalPages = getTotalPages(totalCount, pageSize);
+  const normalizedPage = normalizePage(page, totalPages);
+  const items = await prisma.item.findMany({
+    where,
+    orderBy: { deletedAt: "desc" },
+    skip: (normalizedPage - 1) * pageSize,
+    take: pageSize,
+    select: {
+      id: true,
+      title: true,
+      deletedAt: true,
+      type: {
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          color: true,
+        },
+      },
+    },
+  });
+
+  return {
+    items: items.flatMap(({ deletedAt, ...item }) =>
+      deletedAt
+        ? [
+            {
+              ...item,
+              deletedAt,
+              daysUntilPurge: daysUntilPermanentDeletion(deletedAt),
+            },
+          ]
+        : [],
+    ),
+    totalCount,
+    page: normalizedPage,
+    pageSize,
+    totalPages,
+  };
+}
 
 export function toSidebarItemCounts(
   stats: UserItemStats,
@@ -830,5 +969,6 @@ export function toSidebarItemCounts(
   return {
     favoriteCount: stats.favoriteItemCount,
     pinnedCount: stats.pinnedCount,
+    trashCount: stats.trashCount,
   };
 }

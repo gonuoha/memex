@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 
+const mockRetrieveSubscription = vi.hoisted(() => vi.fn());
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
@@ -11,11 +13,9 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const mockSubscriptionRetrieve = vi.hoisted(() => vi.fn());
-
 vi.mock("./client", () => ({
   getStripe: () => ({
-    subscriptions: { retrieve: mockSubscriptionRetrieve },
+    subscriptions: { retrieve: mockRetrieveSubscription },
   }),
 }));
 
@@ -24,7 +24,6 @@ import { prisma } from "@/lib/prisma";
 import {
   handleCheckoutCompleted,
   handleInvoiceEvent,
-  handleSubscriptionDeleted,
   handleSubscriptionEvent,
 } from "./webhook-handlers";
 
@@ -39,6 +38,7 @@ function createSubscription(
     id: "sub_123",
     status: "active",
     cancel_at_period_end: false,
+    cancel_at: null,
     customer: "cus_123",
     metadata: { userId: "user-1" },
     items: {
@@ -53,29 +53,58 @@ function createSubscription(
   } as unknown as Stripe.Subscription;
 }
 
+function createInvoice(subscriptionId: string | null): Stripe.Invoice {
+  return {
+    customer: "cus_123",
+    parent: subscriptionId
+      ? {
+          type: "subscription_details",
+          subscription_details: { subscription: subscriptionId },
+        }
+      : null,
+  } as unknown as Stripe.Invoice;
+}
+
 describe("stripe webhook handlers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUserFindUnique.mockResolvedValue({ id: "user-1" } as never);
+    mockUserFindUnique.mockResolvedValue({
+      id: "user-1",
+      stripeSubscriptionId: null,
+    } as never);
     mockUserFindFirst.mockResolvedValue(null);
     mockUserUpdate.mockResolvedValue({} as never);
+    mockRetrieveSubscription.mockResolvedValue(createSubscription());
   });
 
   describe("handleCheckoutCompleted", () => {
-    it("stores Stripe IDs for the resolved user", async () => {
+    it("syncs the subscription retrieved from Stripe", async () => {
       await handleCheckoutCompleted({
+        mode: "subscription",
         metadata: { userId: "user-1" },
         customer: "cus_123",
         subscription: "sub_123",
       } as unknown as Stripe.Checkout.Session);
 
+      expect(mockRetrieveSubscription).toHaveBeenCalledWith("sub_123");
       expect(mockUserUpdate).toHaveBeenCalledWith({
         where: { id: "user-1" },
-        data: {
+        data: expect.objectContaining({
+          isPro: true,
           stripeCustomerId: "cus_123",
           stripeSubscriptionId: "sub_123",
-        },
+        }),
       });
+    });
+
+    it("ignores non-subscription checkout sessions", async () => {
+      await handleCheckoutCompleted({
+        mode: "payment",
+        subscription: null,
+      } as unknown as Stripe.Checkout.Session);
+
+      expect(mockRetrieveSubscription).not.toHaveBeenCalled();
+      expect(mockUserUpdate).not.toHaveBeenCalled();
     });
   });
 
@@ -83,9 +112,9 @@ describe("stripe webhook handlers", () => {
     it.each(["active", "trialing", "past_due"] as const)(
       "sets isPro to true for %s status",
       async (status) => {
-        await handleSubscriptionEvent(
-          createSubscription({ status }),
-        );
+        mockRetrieveSubscription.mockResolvedValue(createSubscription({ status }));
+
+        await handleSubscriptionEvent(createSubscription());
 
         expect(mockUserUpdate).toHaveBeenCalledWith({
           where: { id: "user-1" },
@@ -94,46 +123,53 @@ describe("stripe webhook handlers", () => {
             subscriptionStatus: status,
             stripeSubscriptionId: "sub_123",
             stripePriceId: "price_monthly",
+            currentPeriodEnd: new Date(1_700_000_000 * 1000),
           }),
         });
       },
     );
 
-    it.each(["canceled", "unpaid"] as const)(
-      "sets isPro to false for %s status",
+    it.each(["unpaid", "incomplete", "paused"] as const)(
+      "keeps the subscription but revokes pro for %s status",
       async (status) => {
-        await handleSubscriptionEvent(
-          createSubscription({ status }),
-        );
+        mockRetrieveSubscription.mockResolvedValue(createSubscription({ status }));
+
+        await handleSubscriptionEvent(createSubscription());
 
         expect(mockUserUpdate).toHaveBeenCalledWith({
           where: { id: "user-1" },
           data: expect.objectContaining({
             isPro: false,
             subscriptionStatus: status,
+            stripeSubscriptionId: "sub_123",
           }),
         });
       },
     );
 
-    it("resolves the user by stripe customer id when metadata is missing", async () => {
-      mockUserFindUnique.mockResolvedValue(null);
-      mockUserFindFirst.mockResolvedValue({ id: "user-2" } as never);
-
-      await handleSubscriptionEvent(
-        createSubscription({ metadata: {} }),
+    it("uses the latest Stripe state rather than the event payload", async () => {
+      mockRetrieveSubscription.mockResolvedValue(
+        createSubscription({ status: "canceled" }),
       );
 
+      await handleSubscriptionEvent(createSubscription({ status: "active" }));
+
       expect(mockUserUpdate).toHaveBeenCalledWith({
-        where: { id: "user-2" },
-        data: expect.objectContaining({ isPro: true }),
+        where: { id: "user-1" },
+        data: expect.objectContaining({ isPro: false }),
       });
     });
-  });
 
-  describe("handleSubscriptionDeleted", () => {
-    it("revokes pro access and clears subscription fields", async () => {
-      await handleSubscriptionDeleted(createSubscription({ status: "canceled" }));
+    it("clears subscription fields when the subscription is canceled", async () => {
+      mockUserFindUnique.mockResolvedValue({
+        id: "user-1",
+        stripeSubscriptionId: "sub_123",
+      } as never);
+      mockRetrieveSubscription.mockResolvedValue(
+        createSubscription({ status: "canceled" }),
+      );
+
+      await handleSubscriptionEvent(createSubscription());
 
       expect(mockUserUpdate).toHaveBeenCalledWith({
         where: { id: "user-1" },
@@ -144,57 +180,68 @@ describe("stripe webhook handlers", () => {
           currentPeriodEnd: null,
           cancelAtPeriodEnd: false,
           stripeSubscriptionId: null,
+          stripeCustomerId: "cus_123",
         },
       });
     });
 
-    it("ignores deletion of a subscription the user no longer tracks", async () => {
+    it("ignores stale events for a subscription the user has replaced", async () => {
       mockUserFindUnique.mockResolvedValue({
         id: "user-1",
         stripeSubscriptionId: "sub_new",
       } as never);
+      mockRetrieveSubscription.mockResolvedValue(
+        createSubscription({ id: "sub_old", status: "canceled" }),
+      );
 
-      await handleSubscriptionDeleted(createSubscription({ status: "canceled" }));
+      await handleSubscriptionEvent(createSubscription({ id: "sub_old" }));
 
       expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it("flags scheduled cancellation set via cancel_at", async () => {
+      mockRetrieveSubscription.mockResolvedValue(
+        createSubscription({ cancel_at: 1_700_000_000 }),
+      );
+
+      await handleSubscriptionEvent(createSubscription());
+
+      expect(mockUserUpdate).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: expect.objectContaining({ cancelAtPeriodEnd: true }),
+      });
+    });
+
+    it("resolves the user by stripe customer id when metadata is missing", async () => {
+      mockRetrieveSubscription.mockResolvedValue(
+        createSubscription({ metadata: {} }),
+      );
+      mockUserFindFirst.mockResolvedValue({
+        id: "user-2",
+        stripeSubscriptionId: null,
+      } as never);
+
+      await handleSubscriptionEvent(createSubscription());
+
+      expect(mockUserFindFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { stripeCustomerId: "cus_123" } }),
+      );
+      expect(mockUserUpdate).toHaveBeenCalledWith({
+        where: { id: "user-2" },
+        data: expect.objectContaining({ isPro: true }),
+      });
     });
   });
 
   describe("handleInvoiceEvent", () => {
-    function createInvoice(): Stripe.Invoice {
-      return {
-        customer: "cus_123",
-        parent: {
-          type: "subscription_details",
-          subscription_details: { subscription: "sub_123" },
-        },
-      } as unknown as Stripe.Invoice;
-    }
-
-    it("syncs billing from the retrieved subscription", async () => {
-      mockSubscriptionRetrieve.mockResolvedValue(
-        createSubscription({ status: "past_due" }) as never,
+    it("does not grant pro when the first payment of an incomplete subscription fails", async () => {
+      mockRetrieveSubscription.mockResolvedValue(
+        createSubscription({ status: "incomplete" }),
       );
 
-      await handleInvoiceEvent(createInvoice());
+      await handleInvoiceEvent(createInvoice("sub_123"));
 
-      expect(mockSubscriptionRetrieve).toHaveBeenCalledWith("sub_123");
-      expect(mockUserUpdate).toHaveBeenCalledWith({
-        where: { id: "user-1" },
-        data: expect.objectContaining({
-          isPro: true,
-          subscriptionStatus: "past_due",
-        }),
-      });
-    });
-
-    it("does not grant pro when the first payment fails", async () => {
-      mockSubscriptionRetrieve.mockResolvedValue(
-        createSubscription({ status: "incomplete" }) as never,
-      );
-
-      await handleInvoiceEvent(createInvoice());
-
+      expect(mockRetrieveSubscription).toHaveBeenCalledWith("sub_123");
       expect(mockUserUpdate).toHaveBeenCalledWith({
         where: { id: "user-1" },
         data: expect.objectContaining({
@@ -204,10 +251,26 @@ describe("stripe webhook handlers", () => {
       });
     });
 
-    it("ignores invoices without a subscription", async () => {
-      await handleInvoiceEvent({ customer: "cus_123", parent: null } as unknown as Stripe.Invoice);
+    it("keeps pro access while a renewal is past_due", async () => {
+      mockRetrieveSubscription.mockResolvedValue(
+        createSubscription({ status: "past_due" }),
+      );
 
-      expect(mockSubscriptionRetrieve).not.toHaveBeenCalled();
+      await handleInvoiceEvent(createInvoice("sub_123"));
+
+      expect(mockUserUpdate).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: expect.objectContaining({
+          isPro: true,
+          subscriptionStatus: "past_due",
+        }),
+      });
+    });
+
+    it("ignores invoices that are not tied to a subscription", async () => {
+      await handleInvoiceEvent(createInvoice(null));
+
+      expect(mockRetrieveSubscription).not.toHaveBeenCalled();
       expect(mockUserUpdate).not.toHaveBeenCalled();
     });
   });

@@ -15,12 +15,19 @@ vi.mock("@/lib/db/items", () => ({
   getUserItemStats: vi.fn(),
   updateItem: vi.fn(),
   deleteItem: vi.fn(),
+  restoreItem: vi.fn(),
+  permanentlyDeleteItem: vi.fn(),
   toggleItemFavorite: vi.fn(),
   toggleItemPin: vi.fn(),
 }));
 
+vi.mock("@/lib/db/trash", () => ({
+  emptyTrash: vi.fn(),
+}));
+
 vi.mock("@/lib/db/user", () => ({
   getUserIsPro: vi.fn(),
+  getUserStorageUsageBytes: vi.fn(),
 }));
 
 vi.mock("@/lib/db/free-tier-limits", () => ({
@@ -34,11 +41,12 @@ vi.mock("@/lib/db/free-tier-limits", () => ({
     }
   },
   runWithFreeTierItemGuard: vi.fn(),
+  runWithFreeTierItemRestoreGuard: vi.fn(),
 }));
 
 vi.mock("@/lib/r2/storage", () => ({
   deleteObject: vi.fn(),
-  getObjectSize: vi.fn(),
+  getObjectMetadata: vi.fn(),
 }));
 
 import { validateUserCollectionIds } from "@/lib/db/collections";
@@ -47,29 +55,49 @@ import {
   deleteItem as deleteItemInDb,
   getItemTypeBySlug,
   getUserItemStats,
+  permanentlyDeleteItem as permanentlyDeleteItemInDb,
+  restoreItem as restoreItemInDb,
   toggleItemFavorite as toggleItemFavoriteInDb,
   toggleItemPin as toggleItemPinInDb,
 } from "@/lib/db/items";
+import { emptyTrash as emptyTrashInDb } from "@/lib/db/trash";
 import {
   FreeTierLimitExceededError,
   runWithFreeTierItemGuard,
+  runWithFreeTierItemRestoreGuard,
 } from "@/lib/db/free-tier-limits";
-import { getUserIsPro } from "@/lib/db/user";
-import { deleteObject, getObjectSize } from "@/lib/r2/storage";
+import { getUserIsPro, getUserStorageUsageBytes } from "@/lib/db/user";
+import { deleteObject, getObjectMetadata } from "@/lib/r2/storage";
+import { itemLimitErrorMessage } from "@/lib/subscription-limits";
 
-import { createItem, deleteItem, toggleItemFavorite, toggleItemPin } from "./items";
+import {
+  createItem,
+  deleteItem,
+  emptyTrash,
+  permanentlyDeleteItem,
+  restoreItem,
+  toggleItemFavorite,
+  toggleItemPin,
+} from "./items";
 
 const mockValidateUserCollectionIds = vi.mocked(validateUserCollectionIds);
 const mockGetItemTypeBySlug = vi.mocked(getItemTypeBySlug);
 const mockGetUserItemStats = vi.mocked(getUserItemStats);
 const mockCreateItemInDb = vi.mocked(createItemInDb);
 const mockDeleteItemInDb = vi.mocked(deleteItemInDb);
+const mockRestoreItemInDb = vi.mocked(restoreItemInDb);
+const mockPermanentlyDeleteItemInDb = vi.mocked(permanentlyDeleteItemInDb);
+const mockEmptyTrashInDb = vi.mocked(emptyTrashInDb);
+const mockRunWithFreeTierItemRestoreGuard = vi.mocked(
+  runWithFreeTierItemRestoreGuard,
+);
 const mockToggleItemFavoriteInDb = vi.mocked(toggleItemFavoriteInDb);
 const mockToggleItemPinInDb = vi.mocked(toggleItemPinInDb);
 const mockGetUserIsPro = vi.mocked(getUserIsPro);
 const mockRunWithFreeTierItemGuard = vi.mocked(runWithFreeTierItemGuard);
 const mockDeleteObject = vi.mocked(deleteObject);
-const mockGetObjectSize = vi.mocked(getObjectSize);
+const mockGetObjectMetadata = vi.mocked(getObjectMetadata);
+const mockGetUserStorageUsageBytes = vi.mocked(getUserStorageUsageBytes);
 
 const createdItem: ItemDetail = {
   id: "item-1",
@@ -312,7 +340,11 @@ describe("createItem", () => {
     mockGetUserIsPro.mockResolvedValue(true);
     mockGetUserItemStats.mockResolvedValue({ ...defaultStats, itemCount: 50 });
     mockCreateItemInDb.mockResolvedValue(createdItem);
-    mockGetObjectSize.mockResolvedValue(4096);
+    mockGetObjectMetadata.mockResolvedValue({
+      size: 4096,
+      contentType: "application/pdf",
+    });
+    mockGetUserStorageUsageBytes.mockResolvedValue(0);
 
     const result = await createItem({
       type: "file",
@@ -323,7 +355,7 @@ describe("createItem", () => {
     });
 
     expect(result).toEqual({ success: true, data: createdItem });
-    expect(mockGetObjectSize).toHaveBeenCalledWith("users/user-1/abc123/notes.pdf");
+    expect(mockGetObjectMetadata).toHaveBeenCalledWith("users/user-1/abc123/notes.pdf");
     expect(mockCreateItemInDb).toHaveBeenCalledWith(
       "user-1",
       expect.objectContaining({
@@ -345,7 +377,7 @@ describe("createItem", () => {
       color: "#64748b",
     });
     mockGetUserIsPro.mockResolvedValue(true);
-    mockGetObjectSize.mockResolvedValue(null);
+    mockGetObjectMetadata.mockResolvedValue(null);
 
     const result = await createItem({
       type: "file",
@@ -356,6 +388,62 @@ describe("createItem", () => {
     });
 
     expect(result).toEqual({ success: false, error: "Invalid file reference" });
+    expect(mockCreateItemInDb).not.toHaveBeenCalled();
+  });
+
+  it("rejects image items that reference a non-image object", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-image",
+      name: "image",
+      icon: "Image",
+      color: "#ec4899",
+    });
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockGetObjectMetadata.mockResolvedValue({
+      size: 1024,
+      contentType: "application/pdf",
+    });
+
+    const result = await createItem({
+      type: "image",
+      title: "Screenshot",
+      fileUrl: "users/user-1/abc123/notes.pdf",
+      fileName: "notes.pdf",
+      fileSize: 1024,
+    });
+
+    expect(result).toEqual({ success: false, error: "Invalid file reference" });
+    expect(mockCreateItemInDb).not.toHaveBeenCalled();
+  });
+
+  it("rejects file items that would exceed the Pro storage quota", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-file",
+      name: "file",
+      icon: "File",
+      color: "#64748b",
+    });
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockGetObjectMetadata.mockResolvedValue({
+      size: 2048,
+      contentType: "application/pdf",
+    });
+    mockGetUserStorageUsageBytes.mockResolvedValue(1024 * 1024 * 1024 - 1024);
+
+    const result = await createItem({
+      type: "file",
+      title: "Notes",
+      fileUrl: "users/user-1/abc123/notes.pdf",
+      fileName: "notes.pdf",
+      fileSize: 1,
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Storage quota exceeded. Pro accounts are limited to 1 GB of uploads.",
+    });
     expect(mockCreateItemInDb).not.toHaveBeenCalled();
   });
 
@@ -425,27 +513,92 @@ describe("deleteItem", () => {
     expect(mockDeleteObject).not.toHaveBeenCalled();
   });
 
-  it("deletes an item without touching R2 when there is no file", async () => {
+  it("moves an item to trash without deleting R2 objects", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockDeleteItemInDb.mockResolvedValue({
-      typeName: "snippet",
-      fileUrl: null,
-    });
+    mockDeleteItemInDb.mockResolvedValue({ typeName: "snippet" });
 
     const result = await deleteItem("item-1");
 
     expect(result.success).toBe(true);
     expect(mockDeleteObject).not.toHaveBeenCalled();
   });
+});
 
-  it("deletes the R2 object when the item had a file", async () => {
+describe("restoreItem", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns unauthorized when there is no session", async () => {
+    mockUnauthenticated();
+
+    const result = await restoreItem("item-1");
+
+    expect(result).toEqual({ success: false, error: "Unauthorized" });
+    expect(mockRunWithFreeTierItemRestoreGuard).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when the trashed item does not exist", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockDeleteItemInDb.mockResolvedValue({
+    mockGetUserIsPro.mockResolvedValue(false);
+    mockRunWithFreeTierItemRestoreGuard.mockImplementation(
+      async (_userId, _isPro, restore) => restore({} as never),
+    );
+    mockRestoreItemInDb.mockResolvedValue(null);
+
+    const result = await restoreItem("item-1");
+
+    expect(result).toEqual({ success: false, error: "Item not found" });
+  });
+
+  it("returns the free-tier limit message when restore is blocked", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetUserIsPro.mockResolvedValue(false);
+    mockRunWithFreeTierItemRestoreGuard.mockRejectedValue(
+      new FreeTierLimitExceededError("item"),
+    );
+
+    const result = await restoreItem("item-1");
+
+    expect(result).toEqual({
+      success: false,
+      error: itemLimitErrorMessage(),
+    });
+  });
+
+  it("restores a trashed item", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockRunWithFreeTierItemRestoreGuard.mockImplementation(
+      async (_userId, _isPro, restore) => restore({} as never),
+    );
+    mockRestoreItemInDb.mockResolvedValue({
+      id: "item-1",
+      typeName: "snippet",
+    });
+
+    const result = await restoreItem("item-1");
+
+    expect(result).toEqual({
+      success: true,
+      data: { id: "item-1", typeName: "snippet" },
+    });
+  });
+});
+
+describe("permanentlyDeleteItem", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("deletes the R2 object when the trashed item had a file", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockPermanentlyDeleteItemInDb.mockResolvedValue({
       typeName: "file",
       fileUrl: "users/user-1/abc123/notes.pdf",
     });
 
-    const result = await deleteItem("item-1");
+    const result = await permanentlyDeleteItem("item-1");
 
     expect(result.success).toBe(true);
     expect(mockDeleteObject).toHaveBeenCalledWith(
@@ -453,17 +606,53 @@ describe("deleteItem", () => {
     );
   });
 
-  it("still succeeds when deleting the R2 object fails", async () => {
+  it("returns not found when the item is not in trash", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockDeleteItemInDb.mockResolvedValue({
+    mockPermanentlyDeleteItemInDb.mockResolvedValue(null);
+
+    const result = await permanentlyDeleteItem("item-1");
+
+    expect(result).toEqual({ success: false, error: "Item not found" });
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+  });
+
+  it("succeeds even when R2 deletion fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockPermanentlyDeleteItemInDb.mockResolvedValue({
       typeName: "file",
       fileUrl: "users/user-1/abc123/notes.pdf",
     });
-    mockDeleteObject.mockRejectedValue(new Error("R2 unavailable"));
+    mockDeleteObject.mockRejectedValueOnce(new Error("R2 unavailable"));
 
-    const result = await deleteItem("item-1");
+    const result = await permanentlyDeleteItem("item-1");
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe("emptyTrash", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns unauthorized when there is no session", async () => {
+    mockUnauthenticated();
+
+    const result = await emptyTrash();
+
+    expect(result).toEqual({ success: false, error: "Unauthorized" });
+    expect(mockEmptyTrashInDb).not.toHaveBeenCalled();
+  });
+
+  it("empties the signed-in user's trash", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockEmptyTrashInDb.mockResolvedValue({ deletedCount: 2 });
+
+    const result = await emptyTrash();
+
+    expect(result).toEqual({ success: true, data: { deletedCount: 2 } });
+    expect(mockEmptyTrashInDb).toHaveBeenCalledWith("user-1");
   });
 });
 

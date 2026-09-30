@@ -17,6 +17,7 @@ export const proxy = auth((req) => {
   const isCollections = pathname.startsWith("/collections");
   const isFavorites = pathname.startsWith("/favorites");
   const isUpgrade = pathname === "/upgrade";
+  const isTrash = pathname === "/trash";
 
   if (isAuthPage && isLoggedIn) {
     return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
@@ -29,7 +30,8 @@ export const proxy = auth((req) => {
       isItems ||
       isCollections ||
       isFavorites ||
-      isUpgrade) &&
+      isUpgrade ||
+      isTrash) &&
     !isLoggedIn
   ) {
     const signInUrl = new URL("/sign-in", req.nextUrl.origin);
@@ -41,7 +43,13 @@ export const proxy = auth((req) => {
     return NextResponse.redirect(signInUrl);
   }
 
-  return NextResponse.next();
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set(
+    "x-pathname",
+    `${req.nextUrl.pathname}${req.nextUrl.search}`,
+  );
+
+  return NextResponse.next({ request: { headers: requestHeaders } });
 });
 
 export const config = {
@@ -61,5 +69,6 @@ export const config = {
     "/favorites",
     "/favorites/:path*",
     "/upgrade",
+    "/trash",
   ],
 };

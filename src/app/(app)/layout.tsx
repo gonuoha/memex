@@ -1,16 +1,26 @@
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { SidebarContent } from "@/components/dashboard/sidebar-content";
+import { ensureAppSession } from "@/lib/auth/ensure-app-session";
 import { getDashboardLayoutData } from "@/lib/db/dashboard";
 
 export const dynamic = "force-dynamic";
 
-export default async function CollectionsLayout({
+export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { sidebarData, user, collections, searchData, editorPreferences, userPreferences, usage } =
-    await getDashboardLayoutData();
+  await ensureAppSession();
+
+  const {
+    sidebarData,
+    user,
+    collections,
+    searchData,
+    editorPreferences,
+    userPreferences,
+    usage,
+  } = await getDashboardLayoutData();
 
   return (
     <DashboardShell

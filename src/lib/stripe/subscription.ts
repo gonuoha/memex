@@ -1,8 +1,13 @@
+import Stripe from "stripe";
+
 import { getAppUrl } from "@/lib/app-url";
-import { isUniqueConstraintError } from "@/lib/db/prisma-errors";
 import { prisma } from "@/lib/prisma";
 
 import { getStripe, getStripePriceId } from "./client";
+import {
+  isTerminalSubscriptionStatus,
+  subscriptionStatusGrantsPro,
+} from "./subscription-status";
 
 export async function getOrCreateStripeCustomer(
   userId: string,
@@ -27,27 +32,42 @@ export async function getOrCreateStripeCustomer(
     },
   );
 
-  try {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { stripeCustomerId: customer.id },
-    });
-  } catch (error) {
-    if (isUniqueConstraintError(error)) {
-      const existing = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { stripeCustomerId: true },
-      });
+  await prisma.user.update({
+    where: { id: userId },
+    data: { stripeCustomerId: customer.id },
+  });
 
-      if (existing?.stripeCustomerId) {
-        return existing.stripeCustomerId;
-      }
+  return customer.id;
+}
+
+function isStripeResourceMissing(error: unknown): boolean {
+  return (
+    error instanceof Stripe.errors.StripeInvalidRequestError &&
+    error.code === "resource_missing"
+  );
+}
+
+export async function cancelSubscriptionIfActive(
+  subscriptionId: string,
+): Promise<void> {
+  const stripe = getStripe();
+  let subscription: Stripe.Subscription;
+
+  try {
+    subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  } catch (error) {
+    if (isStripeResourceMissing(error)) {
+      return;
     }
 
     throw error;
   }
 
-  return customer.id;
+  if (isTerminalSubscriptionStatus(subscription.status)) {
+    return;
+  }
+
+  await stripe.subscriptions.cancel(subscriptionId);
 }
 
 export class ActiveSubscriptionError extends Error {
@@ -65,21 +85,15 @@ export async function createCheckoutSession(
   const existingUser = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      stripeCustomerId: true,
-      isPro: true,
       subscriptionStatus: true,
       stripeSubscriptionId: true,
     },
   });
 
-  const hasActiveSubscription =
-    existingUser?.isPro &&
-    existingUser.stripeSubscriptionId &&
-    (existingUser.subscriptionStatus === "active" ||
-      existingUser.subscriptionStatus === "trialing" ||
-      existingUser.subscriptionStatus === "past_due");
-
-  if (hasActiveSubscription) {
+  if (
+    existingUser?.stripeSubscriptionId &&
+    subscriptionStatusGrantsPro(existingUser.subscriptionStatus)
+  ) {
     throw new ActiveSubscriptionError();
   }
 

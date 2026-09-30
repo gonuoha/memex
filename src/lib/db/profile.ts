@@ -2,6 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
+import { activeItemWhere } from "@/lib/db/item-filters";
 import { getSystemItemTypes, getUserItemStats } from "@/lib/db/items";
 import { getUserStorageUsageBytes } from "@/lib/db/user";
 import { PRO_STORAGE_QUOTA_BYTES } from "@/lib/subscription-limits";
@@ -62,7 +63,7 @@ export const getProfileData = cache(async (): Promise<ProfileData> => {
     user.isPro ? getUserStorageUsageBytes(user.id) : Promise.resolve(0),
     prisma.item.groupBy({
       by: ["typeId"],
-      where: { userId: user.id },
+      where: activeItemWhere(user.id),
       _count: { typeId: true },
     }),
     getSystemItemTypes(),

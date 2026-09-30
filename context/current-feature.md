@@ -2,14 +2,26 @@
 
 ## Status
 
-Completed
+In Progress
 
 ## Goals
+
+**Phase 2a — Architecture (this step)**
+
+- **Route group**: all authenticated pages (dashboard, items, collections, favorites, trash, profile, settings, upgrade) live in `src/app/(app)/` with one `layout.tsx` (force-dynamic, `DashboardShell` + `getDashboardLayoutData`) that also enforces the session server-side via `ensureAppSession` (callbackUrl from the `x-pathname` header set by `src/proxy.ts`). Shared `(app)/error.tsx` (keeps the shell, uses `unstable_retry`), `(app)/loading.tsx`, root `error.tsx` for layout failures, root `not-found.tsx`.
+- **Item trash**: `Item.deletedAt` + `(userId, deletedAt)` index. Deleting moves to trash (and unpins); every item read/count/groupBy and collection count/dominant-type query uses the not-trashed filter from `src/lib/db/item-filters.ts`, so trashed items are hidden from dashboard, sidebar, search data, favorites, pinned/recent, lists, collections, drawer API, download route, profile stats, and free-tier item count; update/favorite/pin on a trashed item returns "Item not found".
+- **Trash actions**: `/trash` page (paginated, days until purge), drawer "Moved to trash" toast with Undo, `restoreItem` (blocked at the free-tier limit under the advisory lock), `permanentlyDeleteItem` and `emptyTrash`. Deletes re-check `deletedAt` and only remove R2 files for rows actually deleted, so a concurrent restore never loses its file. R2 failures are logged, not surfaced. Trash row actions and Empty trash are disabled while any trash mutation is in flight.
+- **Tests**: `src/lib/db/items.test.ts` locks in the not-trashed filter on reads/mutations and the trash filter on restore/permanent delete; `trash.test.ts` covers batching, restore races, R2 failures and the purge cap; `cron-auth.test.ts` covers bearer verification.
+- **Auto-purge**: `purgeExpiredTrash` removes items trashed more than 30 days ago in batches of 100 (max 50 batches per run) with bulk R2 `DeleteObjects`; `GET /api/cron/purge-trash` requires `Authorization: Bearer $CRON_SECRET` (constant-time compare, 500 if unset); `vercel.json` schedules it daily at 05:00 UTC.
+- **Quota policy**: trashed items do not count toward the free-tier item limit, but their files count toward the storage quota until purged.
+- **Next step (Phase 2b)**: server-side search (replace pre-fetched command-palette data) and direct-to-R2 presigned uploads.
+
+**Baseline from Phase 1**
 
 - **Uploads/downloads**: SVG removed from uploads; image magic-byte validation; download route sends `nosniff`, sandbox CSP, RFC 5987 `Content-Disposition`, inline only for png/jpeg/gif/webp/pdf/text-plain.
 - **Pro gating & storage**: file and image types Pro-only (`isProOnlyItemType`) in upload route, `createItem`, and items page; 1 GB Pro quota from `Item.fileSize` aggregate, enforced on upload and shown on profile; `createItem` records the object size from R2 (HEAD), not the client value.
 - **Account deletion**: requires `DELETE` confirmation plus current password for credentials users; rate limited; aborts with 502 if Stripe cancel fails (missing subscription is treated as already cancelled); deletes R2 prefix `users/{id}/`.
-- **Stripe**: User billing fields (`subscriptionStatus`, `stripePriceId`, `currentPeriodEnd`, `cancelAtPeriodEnd`, unique `stripeCustomerId`); `StripeEvent` idempotency recorded only after handlers succeed (500 on failure); handles `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid/payment_failed` (invoices re-sync the subscription from Stripe); user resolved by `metadata.userId` then `stripeCustomerId`; events for a subscription other than the tracked one cannot revoke Pro; active/trialing/past_due = Pro; checkout 409 if subscribed; customer-create idempotency key; billing card shows renewal/cancel/past_due.
+- **Stripe**: User billing fields (`subscriptionStatus`, `stripePriceId`, `currentPeriodEnd`, `cancelAtPeriodEnd`, unique `stripeCustomerId`); `StripeEvent` idempotency recorded only after handlers succeed (500 on failure); handles `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid/payment_failed` (invoices re-sync the subscription from Stripe); every event re-reads the subscription from Stripe (`syncSubscription`) so out-of-order delivery is harmless; terminal statuses clear the tracked subscription; `cancel_at` counts as scheduled cancellation; user resolved by `metadata.userId` then `stripeCustomerId`; events for a subscription other than the tracked one cannot revoke Pro; active/trialing/past_due = Pro; checkout 409 if subscribed; customer-create idempotency key; billing card shows renewal/cancel/past_due.
 - **Auth**: normalized emails with case-insensitive lookups; `callbackUrl` sanitization; `sessionVersion` in JWT (null session on mismatch or deleted user), bumped on password reset/change (client signs out after change); JWT 14d/1d; email verification via POST button only with `verify:` token prefix; dummy bcrypt compare; password policy 8 chars / 72 bytes; register Zod schema; HTML-escaped emails.
 - **Validation & limits**: field length limits, max 20 tags / 50 collections, case-insensitive tag de-dup, http/https URLs; free-tier count+insert in a transaction with `pg_advisory_xact_lock(hashtext(userId))`.
 - **Rate limiting**: change-password and account-deletion limiters; client IP from `x-vercel-forwarded-for`/`x-real-ip` on Vercel or last XFF hop with `TRUST_PROXY=true`, else `unknown`; AI limiter fails closed on Redis errors and when unconfigured in production.
@@ -17,6 +29,11 @@ Completed
 
 ## Notes
 
+- Phase 2a migration: `20260929180000_item_trash` (nullable `deletedAt` + index; safe on existing data). Set `CRON_SECRET` in Vercel (and document it in `.env.example`); the cron route returns 500 until it is set.
+- Any new item query must use `activeItemWhere` / `notTrashed` from `src/lib/db/item-filters.ts` unless it intentionally targets trash (trash page, restore/permanent delete, purge) or storage usage.
+- `(app)/layout.tsx` and pages render in parallel, so page-level `getCurrentUser()` may redirect to `/sign-in` without a callbackUrl if the proxy is bypassed; the proxy remains the primary guard.
+- `emptyTrash` has no batch cap (runs in a server action); very large trashes rely on the daily purge if it times out.
+- Trash purge caps at 5,000 items per run; a backlog drains over subsequent days. Files whose R2 delete fails after the row is gone become orphans (logged) — the R2 lifecycle/orphan sweep follow-up below would cover them.
 - Migrations: `20260929120000_billing_hardening` (billing fields, `StripeEvent`, unique `stripeCustomerId` — fails if duplicate customer IDs exist) and `20260929133000_session_version`.
 - Stripe webhook must subscribe to the six events above.
 - Known follow-ups: uploads that are never attached to an item are not counted toward the quota (add an R2 lifecycle rule or pending-upload tracking); CSP still allows `'unsafe-inline'` scripts (nonce-based CSP would remove it); verify inline PDF preview in Chrome under the download `sandbox` CSP.

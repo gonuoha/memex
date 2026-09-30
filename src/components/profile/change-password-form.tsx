@@ -7,7 +7,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PASSWORD_POLICY_HINT } from "@/lib/validations/password";
+import {
+  getPasswordPolicyError,
+  PASSWORD_POLICY_HINT,
+} from "@/lib/validations/password";
 
 type ChangePasswordFormProps = {
   onSuccess?: () => void;
@@ -24,6 +27,13 @@ export function ChangePasswordForm({ onSuccess }: ChangePasswordFormProps) {
 
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast.error("All fields are required.");
+      return;
+    }
+
+    const passwordError = getPasswordPolicyError(newPassword);
+
+    if (passwordError) {
+      toast.error(passwordError);
       return;
     }
 

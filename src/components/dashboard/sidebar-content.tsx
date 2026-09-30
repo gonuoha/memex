@@ -1,4 +1,4 @@
-import { LayoutDashboard, Star } from "lucide-react";
+import { LayoutDashboard, Star, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -40,6 +40,12 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
       label: "Favorites",
       icon: Star,
       count: itemCounts.favoriteCount,
+    },
+    {
+      href: "/trash",
+      label: "Trash",
+      icon: Trash2,
+      count: itemCounts.trashCount,
     },
   ];
 

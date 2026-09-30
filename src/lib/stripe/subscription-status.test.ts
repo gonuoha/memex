@@ -4,6 +4,8 @@ import type Stripe from "stripe";
 import {
   getSubscriptionCurrentPeriodEnd,
   getSubscriptionPriceId,
+  isSubscriptionCancelScheduled,
+  isTerminalSubscriptionStatus,
   subscriptionStatusGrantsPro,
 } from "./subscription-status";
 
@@ -45,5 +47,27 @@ describe("subscription-status", () => {
     expect(getSubscriptionCurrentPeriodEnd(subscription)?.toISOString()).toBe(
       new Date(1_700_000_000 * 1000).toISOString(),
     );
+  });
+
+  it("treats canceled and incomplete_expired as terminal", () => {
+    expect(isTerminalSubscriptionStatus("canceled")).toBe(true);
+    expect(isTerminalSubscriptionStatus("incomplete_expired")).toBe(true);
+    expect(isTerminalSubscriptionStatus("past_due")).toBe(false);
+  });
+
+  it("detects cancellation scheduled via cancel_at or cancel_at_period_end", () => {
+    expect(
+      isSubscriptionCancelScheduled(createSubscription({ cancel_at: null })),
+    ).toBe(false);
+    expect(
+      isSubscriptionCancelScheduled(
+        createSubscription({ cancel_at: 1_700_000_000 }),
+      ),
+    ).toBe(true);
+    expect(
+      isSubscriptionCancelScheduled(
+        createSubscription({ cancel_at: null, cancel_at_period_end: true }),
+      ),
+    ).toBe(true);
   });
 });

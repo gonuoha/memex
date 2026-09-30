@@ -10,7 +10,10 @@ import { OAuthDivider } from "@/components/auth/oauth-divider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PASSWORD_POLICY_HINT } from "@/lib/validations/password";
+import {
+  getPasswordPolicyError,
+  PASSWORD_POLICY_HINT,
+} from "@/lib/validations/password";
 import { isValidEmail } from "@/lib/validate-email";
 
 export function RegisterForm() {
@@ -34,6 +37,13 @@ export function RegisterForm() {
 
     if (!isValidEmail(email.trim())) {
       setError("Enter a valid email address.");
+      return;
+    }
+
+    const passwordError = getPasswordPolicyError(password);
+
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 

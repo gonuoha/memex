@@ -7,6 +7,11 @@ import {
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 
+import {
+  activeItemCollectionFilter,
+  collectionActiveItemCountSelect,
+} from "./item-filters";
+
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
 export type CollectionItemType = {
@@ -87,7 +92,10 @@ async function getCollectionTypeAggregations(
   }
 
   const typeCounts = await prisma.itemCollection.findMany({
-    where: { collectionId: { in: collectionIds } },
+    where: {
+      collectionId: { in: collectionIds },
+      ...activeItemCollectionFilter,
+    },
     select: {
       collectionId: true,
       item: {
@@ -198,11 +206,7 @@ function mapToSidebarCollection(
   };
 }
 
-const collectionCountInclude = {
-  _count: {
-    select: { items: true },
-  },
-} as const;
+const collectionCountInclude = collectionActiveItemCountSelect;
 
 export async function getAllCollectionsPaginated(
   userId: string,

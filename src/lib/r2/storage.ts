@@ -38,24 +38,34 @@ export async function deleteObject(key: string) {
   );
 }
 
-export async function getObjectSize(key: string): Promise<number | null> {
-  const client = getR2Client();
+const DELETE_OBJECTS_MAX_KEYS = 1000;
 
-  try {
+export async function deleteObjects(keys: string[]): Promise<void> {
+  const client = getR2Client();
+  const bucket = getR2BucketName();
+  const failedKeys: string[] = [];
+
+  for (let start = 0; start < keys.length; start += DELETE_OBJECTS_MAX_KEYS) {
+    const chunk = keys.slice(start, start + DELETE_OBJECTS_MAX_KEYS);
     const response = await client.send(
-      new HeadObjectCommand({
-        Bucket: getR2BucketName(),
-        Key: key,
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: chunk.map((key) => ({ Key: key })),
+          Quiet: true,
+        },
       }),
     );
 
-    return response.ContentLength ?? null;
-  } catch (error) {
-    if (error instanceof NotFound) {
-      return null;
+    for (const error of response.Errors ?? []) {
+      if (error.Key) {
+        failedKeys.push(error.Key);
+      }
     }
+  }
 
-    throw error;
+  if (failedKeys.length > 0) {
+    throw new Error(`Failed to delete ${failedKeys.length} R2 object(s)`);
   }
 }
 
@@ -93,6 +103,37 @@ export async function deleteObjectsByPrefix(prefix: string): Promise<void> {
       ? listResponse.NextContinuationToken
       : undefined;
   } while (continuationToken);
+}
+
+export type ObjectMetadata = {
+  size: number;
+  contentType: string | null;
+};
+
+export async function getObjectMetadata(
+  key: string,
+): Promise<ObjectMetadata | null> {
+  const client = getR2Client();
+
+  try {
+    const response = await client.send(
+      new HeadObjectCommand({
+        Bucket: getR2BucketName(),
+        Key: key,
+      }),
+    );
+
+    return {
+      size: response.ContentLength ?? 0,
+      contentType: response.ContentType ?? null,
+    };
+  } catch (error) {
+    if (error instanceof NotFound) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 export async function getObject(key: string) {

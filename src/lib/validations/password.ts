@@ -15,5 +15,11 @@ export const passwordSchema = z
     "Password must be at most 72 bytes",
   );
 
+export function getPasswordPolicyError(password: string): string | null {
+  const result = passwordSchema.safeParse(password);
+
+  return result.success ? null : (result.error.issues[0]?.message ?? "Invalid password");
+}
+
 export const PASSWORD_POLICY_HINT =
   "Use at least 8 characters (max 72 bytes for bcrypt).";

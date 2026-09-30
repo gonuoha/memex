@@ -10,7 +10,7 @@ import {
   checkAccountDeletionRateLimit,
   rateLimitedResponse,
 } from "@/lib/rate-limit";
-import { getStripe } from "@/lib/stripe/client";
+import { cancelSubscriptionIfActive } from "@/lib/stripe/subscription";
 
 const deleteAccountSchema = z.object({
   password: z.string().optional(),
@@ -76,7 +76,7 @@ export async function DELETE(request: Request) {
 
   if (user.stripeSubscriptionId) {
     try {
-      await getStripe().subscriptions.cancel(user.stripeSubscriptionId);
+      await cancelSubscriptionIfActive(user.stripeSubscriptionId);
     } catch (error) {
       const alreadyGone =
         error instanceof Stripe.errors.StripeError &&

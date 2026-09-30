@@ -6,18 +6,10 @@ import { getStripe } from "./client";
 import {
   getSubscriptionCurrentPeriodEnd,
   getSubscriptionPriceId,
+  isSubscriptionCancelScheduled,
+  isTerminalSubscriptionStatus,
   subscriptionStatusGrantsPro,
 } from "./subscription-status";
-
-type UserBillingUpdate = {
-  isPro: boolean;
-  subscriptionStatus: string;
-  stripePriceId: string | null;
-  currentPeriodEnd: Date | null;
-  cancelAtPeriodEnd: boolean;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string | null;
-};
 
 type BillingUser = {
   id: string;
@@ -27,17 +19,7 @@ type BillingUser = {
 const billingUserSelect = { id: true, stripeSubscriptionId: true } as const;
 
 function getStripeId(
-  value: string | Stripe.Customer | Stripe.DeletedCustomer | null,
-): string | null {
-  if (!value) {
-    return null;
-  }
-
-  return typeof value === "string" ? value : value.id;
-}
-
-function getSubscriptionId(
-  value: string | Stripe.Subscription | null | undefined,
+  value: string | { id: string } | null | undefined,
 ): string | null {
   if (!value) {
     return null;
@@ -71,104 +53,84 @@ async function resolveUser(
   });
 }
 
-/** A user's tracked subscription must not be overwritten by events for an older one. */
-function isOtherSubscription(user: BillingUser, subscriptionId: string): boolean {
-  return Boolean(
-    user.stripeSubscriptionId && user.stripeSubscriptionId !== subscriptionId,
-  );
-}
+function buildSubscriptionUpdate(subscription: Stripe.Subscription) {
+  if (isTerminalSubscriptionStatus(subscription.status)) {
+    return {
+      isPro: false,
+      subscriptionStatus: subscription.status,
+      stripePriceId: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      stripeSubscriptionId: null,
+    };
+  }
 
-function buildSubscriptionUpdate(
-  subscription: Stripe.Subscription,
-  customerId: string | null,
-): UserBillingUpdate {
   return {
     isPro: subscriptionStatusGrantsPro(subscription.status),
     subscriptionStatus: subscription.status,
     stripePriceId: getSubscriptionPriceId(subscription),
     currentPeriodEnd: getSubscriptionCurrentPeriodEnd(subscription),
-    cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    stripeCustomerId: customerId ?? undefined,
+    cancelAtPeriodEnd: isSubscriptionCancelScheduled(subscription),
     stripeSubscriptionId: subscription.id,
   };
 }
 
-async function updateUserBilling(
-  userId: string,
-  data: UserBillingUpdate,
+/**
+ * Webhooks can arrive out of order or be retried, so billing state is always
+ * re-read from Stripe instead of trusting the event payload. Events for a
+ * subscription the user has since replaced are ignored unless it grants Pro.
+ */
+export async function syncSubscription(
+  subscriptionId: string,
+  fallbackUserId?: string,
 ): Promise<void> {
-  await prisma.user.update({
-    where: { id: userId },
-    data,
-  });
-}
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+  const customerId = getStripeId(subscription.customer);
+  const user = await resolveUser(
+    subscription.metadata?.userId ?? fallbackUserId,
+    customerId,
+  );
 
-export async function handleCheckoutCompleted(
-  session: Stripe.Checkout.Session,
-): Promise<void> {
-  const customerId = getStripeId(session.customer);
-  const subscriptionId = getSubscriptionId(session.subscription);
-  const user = await resolveUser(session.metadata?.userId, customerId);
+  if (!user) {
+    return;
+  }
 
-  if (!user || !customerId || !subscriptionId) {
+  const isCurrentSubscription =
+    !user.stripeSubscriptionId || user.stripeSubscriptionId === subscription.id;
+
+  if (!isCurrentSubscription && !subscriptionStatusGrantsPro(subscription.status)) {
     return;
   }
 
   await prisma.user.update({
     where: { id: user.id },
     data: {
-      stripeCustomerId: customerId,
-      stripeSubscriptionId: subscriptionId,
+      ...buildSubscriptionUpdate(subscription),
+      ...(customerId ? { stripeCustomerId: customerId } : {}),
     },
   });
+}
+
+export async function handleCheckoutCompleted(
+  session: Stripe.Checkout.Session,
+): Promise<void> {
+  const subscriptionId = getStripeId(session.subscription);
+
+  if (session.mode !== "subscription" || !subscriptionId) {
+    return;
+  }
+
+  await syncSubscription(subscriptionId, session.metadata?.userId);
 }
 
 export async function handleSubscriptionEvent(
   subscription: Stripe.Subscription,
 ): Promise<void> {
-  const customerId = getStripeId(subscription.customer);
-  const user = await resolveUser(subscription.metadata?.userId, customerId);
-
-  if (!user) {
-    return;
-  }
-
-  if (
-    isOtherSubscription(user, subscription.id) &&
-    !subscriptionStatusGrantsPro(subscription.status)
-  ) {
-    return;
-  }
-
-  await updateUserBilling(user.id, buildSubscriptionUpdate(subscription, customerId));
+  await syncSubscription(subscription.id);
 }
 
-export async function handleSubscriptionDeleted(
-  subscription: Stripe.Subscription,
-): Promise<void> {
-  const customerId = getStripeId(subscription.customer);
-  const user = await resolveUser(subscription.metadata?.userId, customerId);
-
-  if (!user || isOtherSubscription(user, subscription.id)) {
-    return;
-  }
-
-  await updateUserBilling(user.id, {
-    isPro: false,
-    subscriptionStatus: subscription.status,
-    stripePriceId: null,
-    currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    stripeSubscriptionId: null,
-  });
-}
-
-/**
- * Invoice events carry no reliable subscription state (e.g. a failed first
- * payment leaves the subscription `incomplete`), so re-sync from Stripe.
- */
 export async function handleInvoiceEvent(invoice: Stripe.Invoice): Promise<void> {
-  const subscriptionId = getSubscriptionId(
+  const subscriptionId = getStripeId(
     invoice.parent?.subscription_details?.subscription,
   );
 
@@ -176,7 +138,5 @@ export async function handleInvoiceEvent(invoice: Stripe.Invoice): Promise<void>
     return;
   }
 
-  const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
-
-  await handleSubscriptionEvent(subscription);
+  await syncSubscription(subscriptionId);
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getPasswordByteLength, passwordSchema } from "./password";
+import {
+  getPasswordByteLength,
+  getPasswordPolicyError,
+  passwordSchema,
+} from "./password";
 
 describe("passwordSchema", () => {
   it("accepts a valid password", () => {
@@ -16,5 +20,12 @@ describe("passwordSchema", () => {
 
     expect(getPasswordByteLength(password)).toBe(73);
     expect(passwordSchema.safeParse(password).success).toBe(false);
+  });
+
+  it("counts multi-byte characters toward the 72 byte limit", () => {
+    expect(getPasswordPolicyError("é".repeat(37))).toBe(
+      "Password must be at most 72 bytes",
+    );
+    expect(getPasswordPolicyError("é".repeat(36))).toBeNull();
   });
 });

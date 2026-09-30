@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 
+import { activeItemWhere } from "@/lib/db/item-filters";
 import { prisma } from "@/lib/prisma";
 import {
   isAtCollectionLimit,
@@ -34,13 +35,34 @@ export async function runWithFreeTierItemGuard<T>(
 
   return prisma.$transaction(async (tx) => {
     await takeUserAdvisoryLock(tx, userId);
-    const count = await tx.item.count({ where: { userId } });
+    const count = await tx.item.count({ where: activeItemWhere(userId) });
 
     if (isAtItemLimit(count, false)) {
       throw new FreeTierLimitExceededError("item");
     }
 
     return create(tx);
+  });
+}
+
+export async function runWithFreeTierItemRestoreGuard<T>(
+  userId: string,
+  isPro: boolean,
+  restore: (db: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  if (isPro) {
+    return restore(prisma);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await takeUserAdvisoryLock(tx, userId);
+    const count = await tx.item.count({ where: activeItemWhere(userId) });
+
+    if (isAtItemLimit(count, false)) {
+      throw new FreeTierLimitExceededError("item");
+    }
+
+    return restore(tx);
   });
 }
 

@@ -7,7 +7,7 @@ import { checkForgotPasswordRateLimit, rateLimitedResponse } from "@/lib/rate-li
 import { isValidEmail, normalizeEmail } from "@/lib/validate-email";
 
 type ForgotPasswordRequestBody = {
-  email?: string;
+  email?: unknown;
 };
 
 const GENERIC_SUCCESS_MESSAGE =
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const email = body.email ? normalizeEmail(body.email) : "";
+  const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
 
   if (!email) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });

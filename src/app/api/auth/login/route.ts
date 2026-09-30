@@ -7,9 +7,9 @@ import { sanitizeCallbackUrl } from "@/lib/sanitize-callback-url";
 import { normalizeEmail } from "@/lib/validate-email";
 
 type LoginRequestBody = {
-  email?: string;
-  password?: string;
-  callbackUrl?: string;
+  email?: unknown;
+  password?: unknown;
+  callbackUrl?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -21,9 +21,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const email = body.email ? normalizeEmail(body.email) : "";
-  const password = body.password;
-  const callbackUrl = sanitizeCallbackUrl(body.callbackUrl);
+  const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  const callbackUrl = sanitizeCallbackUrl(
+    typeof body.callbackUrl === "string" ? body.callbackUrl : undefined,
+  );
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required" }, { status: 400 });

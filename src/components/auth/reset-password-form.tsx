@@ -8,6 +8,10 @@ import { AuthErrorMessage } from "@/components/auth/auth-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  getPasswordPolicyError,
+  PASSWORD_POLICY_HINT,
+} from "@/lib/validations/password";
 
 type ResetPasswordFormProps = {
   token: string;
@@ -26,6 +30,13 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
 
     if (!password || !confirmPassword) {
       setError("Both password fields are required.");
+      return;
+    }
+
+    const passwordError = getPasswordPolicyError(password);
+
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -77,7 +88,9 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           disabled={isSubmitting}
+          minLength={8}
         />
+        <p className="text-xs text-muted-foreground">{PASSWORD_POLICY_HINT}</p>
       </div>
 
       <div className="space-y-2">
