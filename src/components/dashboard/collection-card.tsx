@@ -3,7 +3,11 @@
 import Link from "next/link";
 
 import type { DashboardCollection } from "@/lib/db/collections";
-import { getItemTypeIcon, getItemTypeStyles } from "@/lib/item-type-styles";
+import {
+  getItemTypeIcon,
+  getItemTypeLabel,
+  getItemTypeStyles,
+} from "@/lib/item-type-styles";
 import { getTypeColorBorderProps } from "@/lib/type-color-border";
 import { cn } from "@/lib/utils";
 
@@ -37,10 +41,14 @@ export function CollectionCard({ collection }: CollectionCardProps) {
         />
       </div>
 
-      <Link href={`/collections/${collection.id}`} className="block p-4">
-        <h3 className="pr-8 font-medium">{collection.name}</h3>
+      <Link href={`/collections/${collection.id}`} className="block min-w-0 p-4">
+        <h3 className="truncate pr-8 font-medium" title={collection.name}>
+          {collection.name}
+        </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {collection.itemCount} items
+          {collection.itemCount === 1
+            ? "1 item"
+            : `${collection.itemCount} items`}
         </p>
         {collection.description ? (
           <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
@@ -63,8 +71,8 @@ export function CollectionCard({ collection }: CollectionCardProps) {
                   )}
                   style={{ ...styles.textStyle, ...styles.bgStyle }}
                 >
-                  <Icon className="size-3" />
-                  {type.name}
+                  <Icon className="size-3" aria-hidden="true" />
+                  <span className="sr-only">{getItemTypeLabel(type.name)}</span>
                 </span>
               );
             })}

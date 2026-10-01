@@ -12,12 +12,18 @@ import {
 } from "@/lib/db/items";
 import type { DashboardUser } from "@/lib/db/user";
 
+export type SidebarUsage = {
+  itemCount: number;
+  collectionCount: number;
+};
+
 export type SidebarData = {
   user: DashboardUser;
   itemTypes: SidebarItemType[];
   favoriteCollections: SidebarCollection[];
   recentCollections: SidebarCollection[];
   itemCounts: SidebarItemCounts;
+  usage: SidebarUsage;
 };
 
 export async function getSidebarData(user: DashboardUser): Promise<SidebarData> {
@@ -35,5 +41,9 @@ export async function getSidebarData(user: DashboardUser): Promise<SidebarData> 
     favoriteCollections,
     recentCollections,
     itemCounts: toSidebarItemCounts(stats),
+    usage: {
+      itemCount: stats.itemCount,
+      collectionCount: stats.collectionCount,
+    },
   };
 }

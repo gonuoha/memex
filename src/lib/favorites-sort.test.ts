@@ -15,12 +15,19 @@ function createItem(
 ): DashboardItem {
   return {
     description: null,
+    preview: null,
+    url: null,
+    fileName: null,
+    fileSize: null,
+    language: null,
+    fileUrl: null,
     isPinned: false,
     isFavorite: true,
+    createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     tags: [],
     ...overrides,
-  };
+  } as DashboardItem;
 }
 
 function createCollection(

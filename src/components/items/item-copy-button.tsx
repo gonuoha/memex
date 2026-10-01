@@ -42,7 +42,8 @@ export function ItemCopyButton({ itemId, className }: ItemCopyButtonProps) {
       size="icon-xs"
       className={cn("text-muted-foreground hover:text-foreground", className)}
       onClick={handleCopy}
-      aria-label="Copy"
+      aria-label={copied ? "Copied" : "Copy item"}
+      title={copied ? "Copied" : "Copy"}
     >
       {copied ? <Check /> : <Copy />}
     </Button>

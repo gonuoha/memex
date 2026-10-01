@@ -27,6 +27,7 @@ import {
   type DeletedTrashResult,
 } from "@/lib/db/trash";
 import { validateUserCollectionIds } from "@/lib/db/collections";
+import { getTypeSlug } from "@/lib/item-type-slugs";
 import {
   FreeTierLimitExceededError,
   runWithFreeTierItemGuard,
@@ -252,7 +253,7 @@ export async function createItem(
     throw error;
   }
 
-  revalidatePath(`/items/${parsed.data.type}`);
+  revalidatePath(`/items/${getTypeSlug(parsed.data.type)}`);
   revalidatePath("/dashboard");
 
   return { success: true, data: created };
@@ -296,7 +297,7 @@ export async function updateItem(
     return { success: false, error: "Item not found" };
   }
 
-  revalidatePath(`/items/${updated.type.name.toLowerCase()}`);
+  revalidatePath(`/items/${getTypeSlug(updated.type.name)}`);
   revalidatePath("/dashboard");
 
   return { success: true, data: updated };
@@ -403,7 +404,7 @@ export async function emptyTrash(): Promise<ActionResult<DeletedTrashResult>> {
 }
 
 function revalidateItemFavoritePaths(typeName: string) {
-  revalidatePath(`/items/${typeName.toLowerCase()}`);
+  revalidatePath(`/items/${getTypeSlug(typeName)}`);
   revalidatePath("/dashboard");
   revalidatePath("/favorites");
   revalidatePath("/profile");
@@ -431,7 +432,7 @@ export async function toggleItemFavorite(
 }
 
 function revalidateItemPinPaths(typeName: string) {
-  revalidatePath(`/items/${typeName.toLowerCase()}`);
+  revalidatePath(`/items/${getTypeSlug(typeName)}`);
   revalidatePath("/dashboard");
   revalidatePath("/collections", "layout");
 }

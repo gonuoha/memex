@@ -51,7 +51,7 @@ export function EditorPreferencesCard() {
           }
         >
           <SelectTrigger className="w-full">
-            <SelectValue />
+            <SelectValue>{preferences.fontSize}px</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {EDITOR_FONT_SIZES.map((size) => (
@@ -71,7 +71,7 @@ export function EditorPreferencesCard() {
           }
         >
           <SelectTrigger className="w-full">
-            <SelectValue />
+            <SelectValue>{preferences.tabSize} spaces</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {EDITOR_TAB_SIZES.map((size) => (
@@ -89,7 +89,7 @@ export function EditorPreferencesCard() {
           onValueChange={(value) => updateField("theme", value as EditorTheme)}
         >
           <SelectTrigger className="w-full">
-            <SelectValue />
+            <SelectValue>{EDITOR_THEME_LABELS[preferences.theme]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {EDITOR_THEMES.map((theme) => (

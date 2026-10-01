@@ -37,6 +37,32 @@ export function PageHeader({ title, description, className }: PageHeaderProps) {
   );
 }
 
+type SectionHeadingProps = {
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
+};
+
+export function SectionHeading({
+  children,
+  action,
+  className,
+}: SectionHeadingProps) {
+  return (
+    <div
+      className={cn(
+        "mb-3 flex min-h-8 items-center justify-between gap-3",
+        className,
+      )}
+    >
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        {children}
+      </h2>
+      {action}
+    </div>
+  );
+}
+
 type PageContentProps = {
   children: React.ReactNode;
   className?: string;

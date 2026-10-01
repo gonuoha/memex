@@ -13,6 +13,8 @@ import type { EditorPreferences } from "@/lib/editor-preferences";
 import type { UserPreferences } from "@/lib/user-preferences";
 import { cn } from "@/lib/utils";
 
+import { AppKeyboardShortcutsRoot } from "@/components/shortcuts/keyboard-shortcuts-provider";
+
 import { TopBar } from "./top-bar";
 import { SidebarProvider, useSidebar } from "./sidebar-context";
 
@@ -47,7 +49,7 @@ function DashboardShellInner({
           data-collapsed={collapsed || undefined}
           className={cn(
             "group hidden h-full min-h-0 shrink-0 flex-col border-r border-border md:flex",
-            collapsed ? "w-16" : "w-64",
+            collapsed ? "w-[4.25rem]" : "w-64",
           )}
         >
           {sidebar}
@@ -56,7 +58,7 @@ function DashboardShellInner({
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetContent
             side="left"
-            className="flex h-svh w-[min(18rem,85vw)] max-w-none flex-col gap-0 border-r p-0 sm:max-w-none"
+            className="group flex h-svh w-[min(18rem,85vw)] max-w-none flex-col gap-0 border-r p-0 sm:max-w-none"
           >
             {sidebar}
           </SheetContent>
@@ -102,15 +104,17 @@ export function DashboardShell({
         <UserPreferencesProvider initialPreferences={userPreferences}>
           <EditorPreferencesProvider initialPreferences={editorPreferences}>
             <CommandPaletteProvider>
-              <DashboardShellInner
-                sidebar={sidebar}
-                isPro={isPro}
-                collections={collections}
-                itemCount={itemCount}
-                collectionCount={collectionCount}
-              >
-                {children}
-              </DashboardShellInner>
+              <AppKeyboardShortcutsRoot isPro={isPro}>
+                <DashboardShellInner
+                  sidebar={sidebar}
+                  isPro={isPro}
+                  collections={collections}
+                  itemCount={itemCount}
+                  collectionCount={collectionCount}
+                >
+                  {children}
+                </DashboardShellInner>
+              </AppKeyboardShortcutsRoot>
             </CommandPaletteProvider>
           </EditorPreferencesProvider>
         </UserPreferencesProvider>

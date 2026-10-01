@@ -70,7 +70,7 @@ export function SidebarNavLink({
       href={href}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "sidebar-nav-link flex min-h-11 items-center gap-2 rounded-lg border-l-2 px-2 py-2 text-sm transition-colors",
+        "sidebar-nav-link flex h-8 min-h-8 items-center gap-2 rounded-md border-l-2 px-2 text-sm transition-colors",
         className,
         isActive
           ? cn(

@@ -1,5 +1,9 @@
 import { cache } from "react";
 
+import { Prisma, type Prisma as PrismaTypes } from "@/generated/prisma/client";
+import { buildItemListPreview } from "@/lib/item-preview";
+import { parseItemTypeSlug } from "@/lib/item-type-slugs";
+import type { ItemsListSort } from "@/lib/items-list-params";
 import { sortItemTypesBySystemOrder } from "@/lib/item-type-styles";
 import {
   COLLECTIONS_PER_PAGE,
@@ -8,7 +12,6 @@ import {
   normalizePage,
   type PaginatedResult,
 } from "@/lib/pagination";
-import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 
 import type { CollectionItemType } from "./collections";
@@ -27,15 +30,82 @@ const pinnedFirstByCreatedAt = [
   { createdAt: "desc" as const },
 ];
 
+const pinnedFirstByTitleAsc = [
+  { isPinned: "desc" as const },
+  { title: "asc" as const },
+];
+
+const pinnedFirstByTitleDesc = [
+  { isPinned: "desc" as const },
+  { title: "desc" as const },
+];
+
+function getItemsListOrderBy(sort: ItemsListSort) {
+  switch (sort) {
+    case "created":
+      return pinnedFirstByCreatedAt;
+    case "title_asc":
+      return pinnedFirstByTitleAsc;
+    case "title_desc":
+      return pinnedFirstByTitleDesc;
+    case "updated":
+    default:
+      return pinnedFirstByUpdatedAt;
+  }
+}
+
+function buildItemsListWhere(
+  userId: string,
+  base: PrismaTypes.ItemWhereInput,
+  query: ItemsListQuery,
+): PrismaTypes.ItemWhereInput {
+  const tag = query.tag?.trim();
+  const favoritesOnly = query.favoritesOnly ?? false;
+
+  return activeItemWhere(userId, {
+    ...base,
+    ...(favoritesOnly ? { isFavorite: true } : {}),
+    ...(tag
+      ? {
+          tags: {
+            some: {
+              tag: {
+                name: { equals: tag, mode: "insensitive" },
+              },
+            },
+          },
+        }
+      : {}),
+  });
+}
+
 export type DashboardItem = {
   id: string;
   title: string;
   description: string | null;
+  preview: string | null;
+  url: string | null;
+  fileName: string | null;
+  fileSize: number | null;
+  language: string | null;
+  fileUrl: string | null;
   isPinned: boolean;
   isFavorite: boolean;
+  createdAt: Date;
   updatedAt: Date;
   type: CollectionItemType;
   tags: string[];
+};
+
+export type ItemTypeTagOption = {
+  name: string;
+  count: number;
+};
+
+export type ItemsListQuery = {
+  sort: ItemsListSort;
+  tag?: string | null;
+  favoritesOnly?: boolean;
 };
 
 export type FileListItem = {
@@ -138,8 +208,14 @@ const itemSelect = {
   id: true,
   title: true,
   description: true,
+  url: true,
+  fileName: true,
+  fileSize: true,
+  language: true,
+  fileUrl: true,
   isPinned: true,
   isFavorite: true,
+  createdAt: true,
   updatedAt: true,
   type: {
     select: {
@@ -159,6 +235,63 @@ const itemSelect = {
     },
   },
 } as const;
+
+type RawListItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  url: string | null;
+  fileName: string | null;
+  fileSize: number | null;
+  language: string | null;
+  fileUrl: string | null;
+  isPinned: boolean;
+  isFavorite: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  type: CollectionItemType;
+  tags: { tag: { name: string } }[];
+};
+
+const CONTENT_PREVIEW_TYPES = new Set([
+  "snippet",
+  "command",
+  "prompt",
+  "note",
+]);
+
+async function fetchContentExcerpts(
+  userId: string,
+  itemIds: string[],
+): Promise<Map<string, string>> {
+  if (itemIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await prisma.$queryRaw<{ id: string; excerpt: string | null }[]>`
+    SELECT id, left(coalesce("content", ''), 300) AS excerpt
+    FROM "Item"
+    WHERE id IN (${Prisma.join(itemIds)})
+      AND "userId" = ${userId}
+      AND "deletedAt" IS NULL
+  `;
+
+  return new Map(
+    rows.map((row) => [row.id, row.excerpt?.trim() ? row.excerpt : ""]),
+  );
+}
+
+async function mapListItems(
+  userId: string,
+  items: RawListItem[],
+): Promise<DashboardItem[]> {
+  const contentIds = items
+    .filter((item) => CONTENT_PREVIEW_TYPES.has(item.type.name.toLowerCase()))
+    .map((item) => item.id);
+  const excerpts = await fetchContentExcerpts(userId, contentIds);
+
+  return items.map((item) => mapItem(item, excerpts.get(item.id) ?? null));
+}
 
 const fileItemSelect = {
   id: true,
@@ -230,22 +363,32 @@ function mapItemDetail(item: {
   };
 }
 
-function mapItem(item: {
-  id: string;
-  title: string;
-  description: string | null;
-  isPinned: boolean;
-  isFavorite: boolean;
-  updatedAt: Date;
-  type: CollectionItemType;
-  tags: { tag: { name: string } }[];
-}): DashboardItem {
+function mapItem(
+  item: RawListItem,
+  contentExcerpt: string | null = null,
+): DashboardItem {
+  const typeName = item.type.name;
+  const preview = buildItemListPreview({
+    typeName,
+    description: item.description,
+    contentExcerpt,
+    url: item.url,
+    fileName: item.fileName,
+  });
+
   return {
     id: item.id,
     title: item.title,
     description: item.description,
+    preview,
+    url: item.url,
+    fileName: item.fileName,
+    fileSize: item.fileSize,
+    language: item.language,
+    fileUrl: item.fileUrl,
     isPinned: item.isPinned,
     isFavorite: item.isFavorite,
+    createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     type: item.type,
     tags: item.tags.map((entry) => entry.tag.name),
@@ -600,7 +743,7 @@ export async function getFavoriteItems(userId: string): Promise<DashboardItem[]>
     select: itemSelect,
   });
 
-  return items.map(mapItem);
+  return mapListItems(userId, items);
 }
 
 export async function getPinnedItems(
@@ -614,7 +757,7 @@ export async function getPinnedItems(
     select: itemSelect,
   });
 
-  return items.map(mapItem);
+  return mapListItems(userId, items);
 }
 
 export async function getRecentItems(
@@ -628,15 +771,19 @@ export async function getRecentItems(
     select: itemSelect,
   });
 
-  return items.map(mapItem);
+  return mapListItems(userId, items);
 }
 
 export async function getItemTypeBySlug(userId: string, slug: string) {
-  const normalizedSlug = slug.toLowerCase();
+  const typeName = parseItemTypeSlug(slug);
+
+  if (!typeName) {
+    return null;
+  }
 
   return prisma.itemType.findFirst({
     where: {
-      name: { equals: normalizedSlug, mode: "insensitive" },
+      name: { equals: typeName, mode: "insensitive" },
       OR: [{ isSystem: true }, { userId }],
     },
     select: {
@@ -650,26 +797,63 @@ export async function getItemTypeBySlug(userId: string, slug: string) {
 
 export type { PaginatedResult } from "@/lib/pagination";
 
+export async function getItemTypeTags(
+  userId: string,
+  typeId: string,
+): Promise<ItemTypeTagOption[]> {
+  const rows = await prisma.itemTag.groupBy({
+    by: ["tagId"],
+    where: {
+      item: activeItemWhere(userId, { typeId }),
+    },
+    _count: { _all: true },
+  });
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const tags = await prisma.tag.findMany({
+    where: {
+      id: { in: rows.map((row) => row.tagId) },
+      userId,
+    },
+    select: { id: true, name: true },
+  });
+
+  const countByTagId = new Map(
+    rows.map((row) => [row.tagId, row._count._all]),
+  );
+
+  return tags
+    .map((tag) => ({
+      name: tag.name,
+      count: countByTagId.get(tag.id) ?? 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function getItemsByTypePaginated(
   userId: string,
   typeId: string,
   page: number,
+  query: ItemsListQuery = { sort: "updated" },
   pageSize: number = ITEMS_PER_PAGE,
 ): Promise<PaginatedResult<DashboardItem>> {
-  const where = activeItemWhere(userId, { typeId });
+  const where = buildItemsListWhere(userId, { typeId }, query);
   const totalCount = await prisma.item.count({ where });
   const totalPages = getTotalPages(totalCount, pageSize);
   const normalizedPage = normalizePage(page, totalPages);
   const items = await prisma.item.findMany({
     where,
-    orderBy: pinnedFirstByUpdatedAt,
+    orderBy: getItemsListOrderBy(query.sort),
     skip: (normalizedPage - 1) * pageSize,
     take: pageSize,
     select: itemSelect,
   });
 
   return {
-    items: items.map(mapItem),
+    items: await mapListItems(userId, items),
     totalCount,
     page: normalizedPage,
     pageSize,
@@ -681,26 +865,31 @@ export async function getItemsByCollectionPaginated(
   userId: string,
   collectionId: string,
   page: number,
+  query: ItemsListQuery = { sort: "updated" },
   pageSize: number = COLLECTIONS_PER_PAGE,
 ): Promise<PaginatedResult<DashboardItem>> {
-  const where = activeItemWhere(userId, {
-    collections: {
-      some: { collectionId },
+  const where = buildItemsListWhere(
+    userId,
+    {
+      collections: {
+        some: { collectionId },
+      },
     },
-  });
+    query,
+  );
   const totalCount = await prisma.item.count({ where });
   const totalPages = getTotalPages(totalCount, pageSize);
   const normalizedPage = normalizePage(page, totalPages);
   const items = await prisma.item.findMany({
     where,
-    orderBy: pinnedFirstByUpdatedAt,
+    orderBy: getItemsListOrderBy(query.sort),
     skip: (normalizedPage - 1) * pageSize,
     take: pageSize,
     select: itemSelect,
   });
 
   return {
-    items: items.map(mapItem),
+    items: await mapListItems(userId, items),
     totalCount,
     page: normalizedPage,
     pageSize,
@@ -712,15 +901,22 @@ export async function getFileItemsByTypePaginated(
   userId: string,
   typeId: string,
   page: number,
+  query: ItemsListQuery = { sort: "updated" },
   pageSize: number = ITEMS_PER_PAGE,
 ): Promise<PaginatedResult<FileListItem>> {
-  const where = activeItemWhere(userId, { typeId });
+  const where = buildItemsListWhere(userId, { typeId }, query);
   const totalCount = await prisma.item.count({ where });
   const totalPages = getTotalPages(totalCount, pageSize);
   const normalizedPage = normalizePage(page, totalPages);
+  const orderBy =
+    query.sort === "title_asc" || query.sort === "title_desc"
+      ? getItemsListOrderBy(query.sort)
+      : query.sort === "created"
+        ? pinnedFirstByCreatedAt
+        : pinnedFirstByUpdatedAt;
   const items = await prisma.item.findMany({
     where,
-    orderBy: pinnedFirstByCreatedAt,
+    orderBy,
     skip: (normalizedPage - 1) * pageSize,
     take: pageSize,
     select: fileItemSelect,
@@ -891,7 +1087,7 @@ export function toSidebarItemCounts(
   stats: UserItemStats,
 ): SidebarItemCounts {
   return {
-    favoriteCount: stats.favoriteItemCount,
+    favoriteCount: stats.favoriteItemCount + stats.favoriteCollectionCount,
     pinnedCount: stats.pinnedCount,
     trashCount: stats.trashCount,
   };

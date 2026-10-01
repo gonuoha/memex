@@ -7,9 +7,11 @@ import {
   type EditorPreferences,
 } from "@/lib/editor-preferences";
 import {
+  mergeUserPreferences,
   parseUserPreferences,
   type UserPreferences,
 } from "@/lib/user-preferences";
+import { userPreferencesSchema } from "@/lib/validations/user-preferences";
 import { getUserItemStats } from "@/lib/db/items";
 import { prisma } from "@/lib/prisma";
 
@@ -103,11 +105,19 @@ export const getSettingsData = cache(async (): Promise<SettingsData> => {
 
 export async function updateUserPreferences(
   userId: string,
-  preferences: UserPreferences,
+  preferences: Partial<UserPreferences>,
 ): Promise<UserPreferences> {
+  const current = await getUserPreferences(userId);
+  const merged = mergeUserPreferences(current, preferences);
+  const parsed = userPreferencesSchema.safeParse(merged);
+
+  if (!parsed.success) {
+    throw new Error("Invalid user preferences");
+  }
+
   const updated = await prisma.user.update({
     where: { id: userId },
-    data: { userPreferences: preferences },
+    data: { userPreferences: merged },
     select: { userPreferences: true },
   });
 

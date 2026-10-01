@@ -181,6 +181,8 @@ describe("createItemSchema", () => {
 describe("parseCreatableItemTypeFromPathname", () => {
   it("returns the item type from an items page path", () => {
     expect(parseCreatableItemTypeFromPathname("/items/prompt")).toBe("prompt");
+    expect(parseCreatableItemTypeFromPathname("/items/prompts")).toBe("prompt");
+    expect(parseCreatableItemTypeFromPathname("/items/links")).toBe("link");
   });
 
   it("returns undefined for non-item paths", () => {

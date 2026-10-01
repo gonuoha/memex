@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import {
   FolderOpen,
   LayoutDashboard,
+  LayoutGrid,
   Loader2,
   Plus,
   Settings,
@@ -31,7 +32,11 @@ import type {
   SearchCollectionResult,
   SearchItemResult,
 } from "@/lib/db/search";
-import { getItemTypeIcon, getItemTypeLabel } from "@/lib/item-type-styles";
+import {
+  getItemTypeIcon,
+  getItemTypeLabel,
+  getItemTypeStyles,
+} from "@/lib/item-type-styles";
 import { parseSearchQuery, getHighlightTerms } from "@/lib/search-query";
 import { splitHighlightParts } from "@/lib/search-highlight";
 import { cn } from "@/lib/utils";
@@ -76,6 +81,79 @@ function HighlightedText({
 
 function formatCollectionItemCount(itemCount: number) {
   return `${itemCount} ${itemCount === 1 ? "item" : "items"}`;
+}
+
+function ItemTypeMarker({
+  icon,
+  color,
+}: {
+  icon: string | null;
+  color: string | null;
+}) {
+  const Icon = getItemTypeIcon(icon);
+  const styles = getItemTypeStyles(color);
+
+  return (
+    <span className="relative flex size-4 shrink-0 items-center justify-center">
+      {createElement(Icon, {
+        className: cn("size-4", styles.textClassName),
+        style: styles.textStyle,
+      })}
+      <span
+        aria-hidden
+        className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-popover"
+        style={{
+          backgroundColor: color?.startsWith("#") ? color : "var(--muted-foreground)",
+        }}
+      />
+    </span>
+  );
+}
+
+function ItemSearchResultRow({
+  item,
+  highlightTerms,
+  onSelect,
+}: {
+  item: SearchItemResult;
+  highlightTerms: string[];
+  onSelect: () => void;
+}) {
+  const visibleTags = item.tags.slice(0, 3);
+
+  return (
+    <CommandItem
+      value={`item-${item.id}-${item.title}`}
+      onSelect={onSelect}
+    >
+      <ItemTypeMarker icon={item.type.icon} color={item.type.color} />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate">
+          <HighlightedText text={item.title} terms={highlightTerms} />
+        </span>
+        {item.snippet ? (
+          <span className="truncate text-xs text-muted-foreground">
+            <HighlightedText text={item.snippet} terms={highlightTerms} />
+          </span>
+        ) : null}
+        {visibleTags.length > 0 ? (
+          <span className="flex flex-wrap gap-1 pt-0.5">
+            {visibleTags.map((tag) => (
+              <span
+                key={tag.id}
+                className="rounded-md bg-muted px-1.5 py-0 text-[10px] text-muted-foreground"
+              >
+                {tag.name}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </div>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {getItemTypeLabel(item.type.name)}
+      </span>
+    </CommandItem>
+  );
 }
 
 function CommandListWithScrollHint({
@@ -320,6 +398,10 @@ export function CommandPalette() {
               <Star className="size-4 shrink-0" />
               Favorites
             </CommandItem>
+            <CommandItem onSelect={() => navigate("/collections")}>
+              <LayoutGrid className="size-4 shrink-0" />
+              Collections
+            </CommandItem>
             <CommandItem onSelect={() => navigate("/trash")}>
               <Trash2 className="size-4 shrink-0" />
               Trash
@@ -341,64 +423,27 @@ export function CommandPalette() {
 
         {showQuickLinks && items.length > 0 ? (
           <CommandGroup heading="Recent items">
-            {items.map((item) => {
-              const Icon = getItemTypeIcon(item.type.icon);
-
-              return (
-                <CommandItem
-                  key={item.id}
-                  value={`item-${item.id}`}
-                  onSelect={() => handleItemSelect(item.id)}
-                >
-                  {createElement(Icon, { className: "size-4 shrink-0" })}
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate">{item.title}</span>
-                    {item.snippet ? (
-                      <span className="truncate text-xs text-muted-foreground">
-                        {item.snippet}
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {getItemTypeLabel(item.type.name)}
-                  </span>
-                </CommandItem>
-              );
-            })}
+            {items.map((item) => (
+              <ItemSearchResultRow
+                key={item.id}
+                item={item}
+                highlightTerms={[]}
+                onSelect={() => handleItemSelect(item.id)}
+              />
+            ))}
           </CommandGroup>
         ) : null}
 
         {hasQuery && items.length > 0 ? (
           <CommandGroup heading="Items">
-            {items.map((item) => {
-              const Icon = getItemTypeIcon(item.type.icon);
-
-              return (
-                <CommandItem
-                  key={item.id}
-                  value={`item-${item.id}-${item.title}`}
-                  onSelect={() => handleItemSelect(item.id)}
-                >
-                  {createElement(Icon, { className: "size-4 shrink-0" })}
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate">
-                      <HighlightedText text={item.title} terms={highlightTerms} />
-                    </span>
-                    {item.snippet ? (
-                      <span className="truncate text-xs text-muted-foreground">
-                        <HighlightedText
-                          text={item.snippet}
-                          terms={highlightTerms}
-                        />
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {getItemTypeLabel(item.type.name)}
-                  </span>
-                </CommandItem>
-              );
-            })}
+            {items.map((item) => (
+              <ItemSearchResultRow
+                key={item.id}
+                item={item}
+                highlightTerms={highlightTerms}
+                onSelect={() => handleItemSelect(item.id)}
+              />
+            ))}
           </CommandGroup>
         ) : null}
 
@@ -425,9 +470,31 @@ export function CommandPalette() {
           </CommandGroup>
         ) : null}
       </CommandListWithScrollHint>
-      <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-        Filter with <span className="font-mono">type:snippet</span> or{" "}
-        <span className="font-mono">tag:react</span>
+      <div className="flex flex-col gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <p>
+          Filter with <span className="font-mono">type:snippet</span> or{" "}
+          <span className="font-mono">tag:react</span>
+        </p>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:justify-end">
+          <span>
+            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">
+              ↑↓
+            </kbd>{" "}
+            navigate
+          </span>
+          <span>
+            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">
+              ↵
+            </kbd>{" "}
+            open
+          </span>
+          <span>
+            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">
+              esc
+            </kbd>{" "}
+            close
+          </span>
+        </p>
       </div>
     </CommandDialog>
   );

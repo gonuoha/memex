@@ -27,6 +27,8 @@ const mutedTypeStyle = {
   bgClassName: "bg-muted",
 } as const;
 
+export { getTypeSlug } from "@/lib/item-type-slugs";
+
 export const SYSTEM_ITEM_TYPE_ORDER = [
   "snippet",
   "prompt",
@@ -74,14 +76,14 @@ export function getItemTypeLabel(
 
   if (options?.plural) {
     if (normalized === "link") {
-      return "URLs";
+      return "Links";
     }
 
     return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}s`;
   }
 
   if (normalized === "link") {
-    return "URL";
+    return "Link";
   }
 
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);

@@ -41,6 +41,10 @@ const userPreferences: UserPreferences = {
   showOverview: false,
   typeColorPosition: "left",
   appearance: "light",
+  itemsView: "grid",
+  showLinkFavicons: true,
+  onboardingDismissed: false,
+  sampleDataAddedAt: null,
 };
 
 describe("updateEditorPreferences", () => {
@@ -143,12 +147,22 @@ describe("updateUserPreferences", () => {
       delete: vi.fn(),
     } as never);
 
-    const result = await updateUserPreferences(userPreferences);
+    const result = await updateUserPreferences({
+      ...userPreferences,
+      sampleDataAddedAt: "2026-01-01T00:00:00.000Z",
+    });
 
     expect(result).toEqual({ success: true, data: userPreferences });
     expect(mockUpdateUserPreferencesInDb).toHaveBeenCalledWith(
       "user-1",
-      userPreferences,
+      expect.objectContaining({
+        showOverview: userPreferences.showOverview,
+        appearance: userPreferences.appearance,
+        showLinkFavicons: userPreferences.showLinkFavicons,
+      }),
+    );
+    expect(mockUpdateUserPreferencesInDb.mock.calls[0][1]).not.toHaveProperty(
+      "sampleDataAddedAt",
     );
     expect(mockSet).toHaveBeenCalledWith(
       APPEARANCE_COOKIE_NAME,

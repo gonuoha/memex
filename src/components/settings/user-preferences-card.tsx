@@ -82,7 +82,7 @@ export function UserPreferencesCard({
             }
           >
             <SelectTrigger className="w-full sm:w-48">
-              <SelectValue />
+              <SelectValue>{APPEARANCE_LABELS[preferences.appearance]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {APPEARANCES.map((option) => (
@@ -105,6 +105,18 @@ export function UserPreferencesCard({
         </PreferenceField>
 
         <PreferenceField
+          label="Link favicons"
+          description="Show site icons on link cards. Icons are fetched from Google's favicon service using only the link's hostname."
+        >
+          <Switch
+            checked={preferences.showLinkFavicons}
+            onCheckedChange={(checked) =>
+              updateField("showLinkFavicons", checked)
+            }
+          />
+        </PreferenceField>
+
+        <PreferenceField
           label="Type color position"
           description="Choose where the item type color appears on cards."
         >
@@ -115,7 +127,9 @@ export function UserPreferencesCard({
             }
           >
             <SelectTrigger className="w-full sm:w-48">
-              <SelectValue />
+              <SelectValue>
+                {TYPE_COLOR_POSITION_LABELS[preferences.typeColorPosition]}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {TYPE_COLOR_POSITIONS.map((position) => (

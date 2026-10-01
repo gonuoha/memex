@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import type { FavoriteCollection } from "@/lib/db/collections";
 import type { DashboardItem } from "@/lib/db/items";
+import { ITEM_CARD_TRIGGER_CLASS } from "@/components/items/item-card-styles";
 import { formatShortDateWithYear } from "@/lib/format-date";
 import {
   type FavoriteCollectionSortField,
@@ -195,17 +196,8 @@ function FavoriteItemRow({ item }: FavoriteItemRowProps) {
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => openItem(item.id)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          openItem(item.id);
-        }
-      }}
       className={cn(
-        "group w-full cursor-pointer px-4 py-2 text-left transition-colors",
+        "group relative w-full px-4 py-2 text-left transition-colors",
         FAVORITES_ROW_LAYOUT,
         FAVORITES_ROW_SURFACE,
       )}
@@ -223,11 +215,19 @@ function FavoriteItemRow({ item }: FavoriteItemRowProps) {
           {createElement(TypeIcon, { className: "size-3.5" })}
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="truncate text-sm font-medium">{item.title}</span>
+          <button
+            type="button"
+            onClick={() => openItem(item.id)}
+            title={item.title}
+            className={cn(ITEM_CARD_TRIGGER_CLASS, "w-auto text-sm after:rounded-none")}
+          >
+            {item.title}
+          </button>
           {item.isPinned ? (
             <Pin
               className="size-3 shrink-0 text-muted-foreground"
               aria-label="Pinned"
+              role="img"
             />
           ) : null}
         </div>
@@ -244,7 +244,7 @@ function FavoriteItemRow({ item }: FavoriteItemRowProps) {
         {formatShortDateWithYear(item.updatedAt)}
       </time>
 
-      <div className="flex shrink-0 items-center justify-end gap-1">
+      <div className="relative z-10 flex shrink-0 items-center justify-end gap-1">
         <ItemFavoriteButton
           key={`${item.id}-${item.isFavorite}`}
           itemId={item.id}

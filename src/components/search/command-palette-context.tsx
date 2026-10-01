@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -63,29 +62,6 @@ export function CommandPaletteProvider({
   const openCollectionCreate = useCallback(() => {
     createHandlersRef.current?.openCollectionCreate();
   }, []);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key.toLowerCase() !== "k") {
-        return;
-      }
-
-      const modifierPressed = event.metaKey || event.ctrlKey;
-
-      if (!modifierPressed) {
-        return;
-      }
-
-      event.preventDefault();
-      togglePalette();
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [togglePalette]);
 
   const value = useMemo(
     () => ({

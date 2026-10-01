@@ -1,72 +1,100 @@
 import Link from "next/link";
 
 import { CollectionsGrid } from "@/components/dashboard/collection-card";
+import { DashboardGreeting } from "@/components/dashboard/dashboard-greeting";
+import { DashboardQuickCapture } from "@/components/dashboard/dashboard-quick-capture";
+import { DashboardStatsStrip } from "@/components/dashboard/dashboard-stats-strip";
 import { ItemRow } from "@/components/dashboard/item-row";
-import { StatsCards } from "@/components/dashboard/stats-cards";
+import { OnboardingCard } from "@/components/dashboard/onboarding-card";
 import {
   PageContainer,
-  PageContent,
-  PageHeader,
-  PageSection,
+  SectionHeading,
 } from "@/components/layout/page-container";
-import { getDashboardPageData } from "@/lib/db/dashboard";
+import { getDashboardLayoutData, getDashboardPageData } from "@/lib/db/dashboard";
 
 export default async function DashboardPage() {
-  const { collections, stats, pinnedItems, recentItems, showOverview } =
-    await getDashboardPageData();
+  const [
+    {
+      collections,
+      stats,
+      pinnedItems,
+      recentItems,
+      showOverview,
+      firstName,
+      itemCount,
+      collectionCount,
+      isPro,
+      showOnboarding,
+    },
+    layoutData,
+  ] = await Promise.all([getDashboardPageData(), getDashboardLayoutData()]);
 
   return (
     <PageContainer wide>
-      <PageHeader
-        title="Dashboard"
-        description="Your developer knowledge hub"
-      />
+      <div className="space-y-5">
+        <DashboardGreeting firstName={firstName}>
+          {showOverview ? (
+            <DashboardStatsStrip
+              itemCount={stats.itemCount}
+              collectionCount={stats.collectionCount}
+              favoriteItemCount={stats.favoriteItemCount}
+              favoriteCollectionCount={stats.favoriteCollectionCount}
+            />
+          ) : null}
+        </DashboardGreeting>
+        <DashboardQuickCapture
+          isPro={isPro}
+          itemCount={layoutData.usage.itemCount}
+        />
+      </div>
 
-      <PageContent>
-        {showOverview ? (
-          <PageSection
-            title="Overview"
-            className="rounded-none border-0 bg-background p-0"
-          >
-            <StatsCards {...stats} />
-          </PageSection>
-        ) : null}
+      {showOnboarding ? (
+        <OnboardingCard
+          itemCount={itemCount}
+          collectionCount={collectionCount}
+          isPro={isPro}
+        />
+      ) : null}
 
+      {pinnedItems.length > 0 ? (
         <section>
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Collections</h2>
-            <Link
-              href="/collections"
-              className="inline-flex min-h-11 items-center px-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              View all
-            </Link>
-          </div>
-          <div className="mt-4">
-            <CollectionsGrid collections={collections} />
+          <SectionHeading>Pinned</SectionHeading>
+          <div className="space-y-2">
+            {pinnedItems.map((item) => (
+              <ItemRow key={item.id} item={item} compact />
+            ))}
           </div>
         </section>
+      ) : null}
 
-        {pinnedItems.length > 0 ? (
-          <section>
-            <h2 className="text-lg font-semibold">Pinned</h2>
-            <div className="mt-4 space-y-3">
-              {pinnedItems.map((item) => (
-                <ItemRow key={item.id} item={item} />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
+      {recentItems.length > 0 ? (
         <section>
-          <h2 className="text-lg font-semibold">Recent Items</h2>
-          <div className="mt-4 space-y-3">
+          <SectionHeading>Recent</SectionHeading>
+          <div className="space-y-2">
             {recentItems.map((item) => (
               <ItemRow key={item.id} item={item} />
             ))}
           </div>
         </section>
-      </PageContent>
+      ) : null}
+
+      {collections.length > 0 ? (
+        <section>
+          <SectionHeading
+            action={
+              <Link
+                href="/collections"
+                className="rounded-sm px-1 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                View all
+              </Link>
+            }
+          >
+            Collections
+          </SectionHeading>
+          <CollectionsGrid collections={collections} />
+        </section>
+      ) : null}
     </PageContainer>
   );
 }

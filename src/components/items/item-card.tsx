@@ -1,18 +1,18 @@
 "use client";
 
-import { createElement } from "react";
-import { Pin } from "lucide-react";
-
 import type { DashboardItem } from "@/lib/db/items";
-import { formatShortDate } from "@/lib/format-date";
-import { getItemTypeIcon, getItemTypeStyles } from "@/lib/item-type-styles";
 import { getTypeColorBorderProps } from "@/lib/type-color-border";
 import { cn } from "@/lib/utils";
 
+import { ItemCardMeta } from "@/components/items/item-card-meta";
+import {
+  ITEM_CARD_SURFACE_CLASS,
+  ITEM_CARD_TRIGGER_CLASS,
+} from "@/components/items/item-card-styles";
+import { ItemCardPreview } from "@/components/items/item-card-preview";
+import { ItemListActions } from "@/components/items/item-list-actions";
 import { useTypeColorPosition } from "@/components/user-preferences/user-preferences-context";
 
-import { ItemCopyButton } from "./item-copy-button";
-import { ItemFavoriteButton } from "./item-favorite-button";
 import { useItemDrawer } from "./item-drawer-context";
 
 type ItemCardProps = {
@@ -22,92 +22,41 @@ type ItemCardProps = {
 export function ItemCard({ item }: ItemCardProps) {
   const { openItem } = useItemDrawer();
   const typeColorPosition = useTypeColorPosition();
-  const typeStyles = getItemTypeStyles(item.type.color);
   const typeColorBorder = getTypeColorBorderProps(
     item.type.color,
     typeColorPosition,
   );
 
   return (
-    <div className="relative h-full">
-      <button
-        type="button"
-        onClick={() => openItem(item.id)}
-        className={cn(
-          "flex h-full w-full flex-col rounded-xl border border-border bg-card p-4 pr-14 text-left transition-colors hover:bg-muted/40",
-          typeColorBorder.className,
-        )}
-        style={typeColorBorder.style}
-      >
-        <div className="flex items-start gap-3">
-          <div
-            className={cn(
-              "flex size-10 shrink-0 items-center justify-center rounded-lg",
-              typeStyles.textClassName,
-              typeStyles.bgClassName,
-              !item.type.color && "bg-muted text-muted-foreground",
-            )}
-            style={{ ...typeStyles.textStyle, ...typeStyles.bgStyle }}
+    <article
+      className={cn(
+        ITEM_CARD_SURFACE_CLASS,
+        "flex h-full flex-col",
+        typeColorBorder.className,
+      )}
+      style={typeColorBorder.style}
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        <h3 className="min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => openItem(item.id)}
+            className={ITEM_CARD_TRIGGER_CLASS}
+            title={item.title}
           >
-            {createElement(getItemTypeIcon(item.type.icon), { className: "size-4" })}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="line-clamp-2 break-words font-medium">{item.title}</h3>
-              <time
-                dateTime={item.updatedAt.toISOString()}
-                className="hidden shrink-0 text-xs text-muted-foreground sm:block"
-              >
-                {formatShortDate(item.updatedAt)}
-              </time>
-            </div>
-            {item.description ? (
-              <p className="mt-2 line-clamp-2 text-sm text-muted-foreground sm:line-clamp-3">
-                {item.description}
-              </p>
-            ) : null}
-            <div
-              className={cn(
-                "mt-2 flex items-center gap-1.5 text-xs text-muted-foreground",
-                !item.isPinned && "sm:hidden",
-              )}
-            >
-              {item.isPinned ? (
-                <>
-                  <Pin className="size-3 shrink-0" aria-label="Pinned" />
-                  <span className="sm:hidden" aria-hidden="true">
-                    ·
-                  </span>
-                </>
-              ) : null}
-              <time dateTime={item.updatedAt.toISOString()} className="sm:hidden">
-                {formatShortDate(item.updatedAt)}
-              </time>
-            </div>
-          </div>
-        </div>
-        {item.tags.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {item.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </button>
-      <div className="absolute top-3 right-3 flex flex-col gap-1 sm:bottom-3 sm:justify-between">
-        <ItemFavoriteButton
-          key={`${item.id}-${item.isFavorite}`}
+            {item.title}
+          </button>
+        </h3>
+        <ItemListActions
           itemId={item.id}
           isFavorite={item.isFavorite}
+          isPinned={item.isPinned}
+          className="-mt-0.5 -mr-1.5"
         />
-        <ItemCopyButton itemId={item.id} />
       </div>
-    </div>
+      <ItemCardMeta item={item} className="mt-2" />
+      <ItemCardPreview item={item} />
+    </article>
   );
 }
 
@@ -117,7 +66,7 @@ type ItemsGridProps = {
 
 export function ItemsGrid({ items }: ItemsGridProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
         <ItemCard key={item.id} item={item} />
       ))}

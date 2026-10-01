@@ -1,95 +1,79 @@
 "use client";
 
-import { createElement } from "react";
-import { Pin } from "lucide-react";
-
 import type { DashboardItem } from "@/lib/db/items";
-import { formatShortDate } from "@/lib/format-date";
-import { getItemTypeIcon, getItemTypeStyles } from "@/lib/item-type-styles";
 import { getTypeColorBorderProps } from "@/lib/type-color-border";
 import { cn } from "@/lib/utils";
 
-import { ItemFavoriteButton } from "@/components/items/item-favorite-button";
-import { useTypeColorPosition } from "@/components/user-preferences/user-preferences-context";
+import {
+  ITEM_CARD_SURFACE_CLASS,
+  ITEM_CARD_TRIGGER_CLASS,
+} from "@/components/items/item-card-styles";
+import { ItemCardMeta } from "@/components/items/item-card-meta";
+import { ItemCardPreview } from "@/components/items/item-card-preview";
+import { ItemListActions } from "@/components/items/item-list-actions";
 import { useItemDrawer } from "@/components/items/item-drawer-context";
+import { useTypeColorPosition } from "@/components/user-preferences/user-preferences-context";
 
 type ItemRowProps = {
   item: DashboardItem;
+  compact?: boolean;
 };
 
-export function ItemRow({ item }: ItemRowProps) {
+export function ItemRow({ item, compact = false }: ItemRowProps) {
   const { openItem } = useItemDrawer();
   const typeColorPosition = useTypeColorPosition();
-  const typeStyles = getItemTypeStyles(item.type.color);
   const typeColorBorder = getTypeColorBorderProps(
     item.type.color,
     typeColorPosition,
   );
+  const isImage = item.type.name.toLowerCase() === "image";
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => openItem(item.id)}
-        className={cn(
-          "flex w-full items-start gap-3 rounded-xl border border-border bg-card p-4 pr-12 text-left transition-colors hover:bg-muted/40",
-          typeColorBorder.className,
-        )}
-        style={typeColorBorder.style}
-      >
-        <div
-          className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-lg",
-            typeStyles.textClassName,
-            typeStyles.bgClassName,
-            !item.type.color && "bg-muted text-muted-foreground",
-          )}
-          style={{ ...typeStyles.textStyle, ...typeStyles.bgStyle }}
-        >
-          {createElement(getItemTypeIcon(item.type.icon), { className: "size-4" })}
+    <article
+      className={cn(
+        ITEM_CARD_SURFACE_CLASS,
+        "flex gap-3",
+        compact ? "py-3" : undefined,
+        isImage ? "items-stretch" : "items-start",
+        typeColorBorder.className,
+      )}
+      style={typeColorBorder.style}
+    >
+      {isImage ? (
+        <div className="hidden h-16 w-28 shrink-0 overflow-hidden rounded-md border border-border sm:block">
+          {/* eslint-disable-next-line @next/next/no-img-element -- authenticated download route, not optimizable by next/image */}
+          <img
+            src={`/api/items/${item.id}/download`}
+            alt=""
+            loading="lazy"
+            className="size-full object-cover"
+          />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="truncate font-medium">{item.title}</h3>
-                {item.isPinned ? (
-                  <Pin className="size-3.5 shrink-0 text-muted-foreground" />
-                ) : null}
-              </div>
-              {item.description ? (
-                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                  {item.description}
-                </p>
-              ) : null}
-            </div>
-            <time
-              dateTime={item.updatedAt.toISOString()}
-              className="shrink-0 text-xs text-muted-foreground"
+      ) : null}
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-start gap-2">
+          <h3 className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => openItem(item.id)}
+              className={ITEM_CARD_TRIGGER_CLASS}
+              title={item.title}
             >
-              {formatShortDate(item.updatedAt)}
-            </time>
-          </div>
-          {item.tags.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {item.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          ) : null}
+              {item.title}
+            </button>
+          </h3>
+          <ItemListActions
+            itemId={item.id}
+            isFavorite={item.isFavorite}
+            isPinned={item.isPinned}
+            className="-mt-0.5 -mr-1.5"
+          />
         </div>
-      </button>
-      <ItemFavoriteButton
-        key={`${item.id}-${item.isFavorite}`}
-        itemId={item.id}
-        isFavorite={item.isFavorite}
-        className="absolute top-4 right-4"
-      />
-    </div>
+        <ItemCardMeta item={item} className="mt-1.5" />
+        {!isImage && !compact ? (
+          <ItemCardPreview item={item} className="mt-2" />
+        ) : null}
+      </div>
+    </article>
   );
 }

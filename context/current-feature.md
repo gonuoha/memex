@@ -2,9 +2,19 @@
 
 ## Status
 
-In Progress
+Completed
 
 ## Goals
+
+**Phase 3 — Design refresh (3a item views/dashboard + 3b shell/shortcuts)**
+
+- **Item cards & rows** (grid card, list row, dashboard pinned/recent, collection sections, file rows, favorites rows): `<article>` surface with a stretched title `<button>` (`::after` overlay) and action siblings at `z-10`, so there are no nested interactive elements. Actions (pin, favorite, copy) are always visible on coarse pointers and revealed on hover/focus-within on fine pointers. Meta row has a full-color type dot, tags and relative dates. Type-aware previews (first 4 snippet lines, `$ command`, markdown-stripped notes/prompts, link host+path with optional favicon, file name/size, image thumbnail) come from one `left(content, 300)` batch query scoped by `userId` and not-trashed.
+- **Items list toolbar** (`/items/[type]`, `/collections/[id]`): URL-persisted sort, tag (type pages), favorites-only, grid/list (saved to `userPreferences.itemsView` before navigating; an explicit `?view=` overrides it). Selects show human labels. Search params go through `parseItemsListSearchParams` (repeated keys, unknown values, oversized tags, invalid pages). Canonical plural slugs (`/items/snippets`, …); singular/alias/mixed-case slugs redirect permanently with filters preserved, and all `revalidatePath` calls use `getTypeSlug`.
+- **Dashboard**: time-of-day greeting with the stats strip as its subtitle (when Overview is enabled), quick capture (Enter submits; a URL auto-selects Link and saves directly, otherwise the prefilled create dialog opens; free-tier limit checked first), pinned/recent/collections sections with a shared `SectionHeading`. The first-run onboarding checklist shows when the user has no items. `addSampleItems` runs in one advisory-locked transaction: idempotency marker check, free-tier headroom for all 5 samples, the collection only if under the collection limit, and the `sampleDataAddedAt` marker.
+- **Shell (3b)**: "New" split button (item / per-type / collection), sidebar regrouped (Home, Types, Collections → Favorites/Recent), the Favorites count is items + collections (from stats, no longer capped by the sidebar list), free-plan usage meter, Keyboard shortcuts entry in the user menu.
+- **Keyboard shortcuts**: `⌘/Ctrl+K` (works in inputs, not in Monaco), `/`, `?`, `[`, `c`, `⇧C`, `g` + `d/f/t/s/c/1–7`. Ignored in inputs, contenteditable and Monaco, while Base UI dialogs/menus/listboxes are open (`data-open`), during IME composition, and for any ⌘/Ctrl combo, so browser shortcuts keep working.
+- **Preferences**: `userPreferences.showLinkFavicons` (default true, Settings toggle). Favicons send only `encodeURIComponent(hostname)` to Google with `referrerPolicy="no-referrer"` and `loading="lazy"`. The settings action no longer accepts `sampleDataAddedAt`.
+- **Metadata & legal**: title template, OG/Twitter metadata, theme colors, `app/icon.svg`. `/privacy` and `/terms` share `LegalPage` with a "Template — not yet in effect" notice (no auto "last updated" date) and list subprocessors, including the favicon service.
 
 **Phase 2a — Architecture**
 
@@ -34,6 +44,8 @@ In Progress
 
 ## Notes
 
+- Phase 3: create-dialog prefill is a browser-only module handoff (`setItemCreatePrefill` → next `ItemCreateDialog` open); no-op on the server. Shared card classes live in `src/components/items/item-card-styles.ts`. `stats-cards.tsx` was removed (replaced by the stats strip).
+- Phase 3 follow-ups: the greeting uses server time (no user timezone); `MARKETING_CONTACT_EMAIL` (`hello@memex.app`) must be a real inbox before launch; the legal pages need counsel review.
 - Phase 2a migration: `20260929180000_item_trash` (nullable `deletedAt` + index; safe on existing data). Set `CRON_SECRET` in Vercel (and document it in `.env.example`); the cron route returns 500 until it is set.
 - Phase 2b migrations: `20260930150000_item_full_text_search`, `20260930190000_pending_uploads`. Apply R2 bucket CORS (app origin + `http://localhost:3000`, `PUT`, `Content-Type` header, reasonable `MaxAge`). Existing R2 env vars unchanged; `R2_ACCOUNT_ID` must be set at build time for the exact CSP origin (otherwise `https://*.r2.cloudflarestorage.com`). `@aws-sdk/s3-request-presigner` added for upload URLs. The existing daily cron now also purges expired pending uploads (response adds `purgedUploadCount`).
 - Removing a file in the create dialog does not release its reservation; it expires after 1 h. A discard endpoint would free quota sooner.
@@ -113,3 +125,4 @@ In Progress
 - 2026-08-13: Completed **Add Light and Dark-blue Themes** - added more themes. Defaults to system (light / dark)
 - 2026-09-29: Completed **Phase 1 — Production Hardening** — upload/download XSS fixes (no SVG, magic bytes, sandboxed downloads), Pro gating for images, 1 GB storage quota from R2 object size, R2 cleanup and re-auth on account deletion, Stripe subscription state sync with webhook idempotency, session revocation via `sessionVersion`, POST-only email verification, password policy, input limits, free-tier advisory locks, expanded rate limiting, security headers and CSP
 - 2026-09-30: Completed **Phase 2 — Architecture** — shared `(app)` route group with server-side auth guard, item trash with restore/permanent delete/30-day cron purge, Postgres full-text + trigram search behind `/api/search` with on-demand command palette, presigned direct-to-R2 uploads with server-side size/quota/magic-byte verification
+- 2026-09-30: Completed **Phase 3 — Design Refresh** — content previews on item cards, filterable/sortable item lists with grid/list toggle and URL params, overflow menus with overlay-button cards, keyboard shortcuts (`?` help dialog, `g`-sequences, `n` new), New split button, dashboard greeting/quick capture/stats strip/onboarding checklist, sidebar polish, link favicons preference, app icon and metadata, privacy and terms pages

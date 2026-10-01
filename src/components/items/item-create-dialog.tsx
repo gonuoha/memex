@@ -39,6 +39,7 @@ import {
 } from "@/lib/validations/items";
 import { UpgradePrompt } from "@/components/shared/upgrade-prompt";
 import { useAiItemSuggestions } from "@/hooks/use-ai-item-suggestions";
+import { consumeItemCreatePrefill } from "@/components/items/item-create-prefill";
 import { cn } from "@/lib/utils";
 
 const CREATABLE_ITEM_TYPES: {
@@ -136,9 +137,16 @@ export function ItemCreateDialog({
     wasOpenRef.current = open;
 
     if (justOpened) {
+      const prefill = consumeItemCreatePrefill();
       setFormState({
         ...initialFormState,
-        type: resolveDefaultCreateType(defaultType, isPro),
+        type: resolveDefaultCreateType(prefill?.type ?? defaultType, isPro),
+        title: prefill?.title ?? "",
+        description: prefill?.description ?? "",
+        content: prefill?.content ?? "",
+        url: prefill?.url ?? "",
+        language: prefill?.language ?? "",
+        tags: prefill?.tags ?? "",
       });
       resetSuggestions();
     }
@@ -234,7 +242,7 @@ export function ItemCreateDialog({
               }
             >
               <SelectTrigger id="item-create-type" className="w-fit min-w-40">
-                <SelectValue />
+                <SelectValue>{getItemTypeLabel(formState.type)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {CREATABLE_ITEM_TYPES.map(({ type, icon }) => (

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { parseItemTypeSlug } from "@/lib/item-type-slugs";
+
 function emptyToNull(value: unknown) {
   return typeof value === "string" && value.trim() === "" ? null : value;
 }
@@ -125,7 +127,12 @@ export function parseCreatableItemTypeFromPathname(
     return undefined;
   }
 
-  const parsed = creatableItemTypeSchema.safeParse(match[1]);
+  const typeName = parseItemTypeSlug(match[1]);
+  if (!typeName) {
+    return undefined;
+  }
+
+  const parsed = creatableItemTypeSchema.safeParse(typeName);
   return parsed.success ? parsed.data : undefined;
 }
 

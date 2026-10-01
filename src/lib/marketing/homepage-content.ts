@@ -8,6 +8,8 @@ import {
   Terminal,
 } from "lucide-react";
 
+import { MARKETING_CONTACT_EMAIL } from "@/lib/marketing/site";
+
 export const SYSTEM_ITEM_TYPE_COLORS = {
   snippet: "#4DA3E8",
   prompt: "#9B8AFB",
@@ -145,15 +147,15 @@ export const FOOTER_LINKS = {
   product: [
     { label: "Features", href: "#features" },
     { label: "Pricing", href: "#pricing" },
-    { label: "Changelog", href: "#" },
   ],
   company: [
-    { label: "About", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "Contact", href: "#" },
+    {
+      label: "Contact",
+      href: `mailto:${MARKETING_CONTACT_EMAIL}`,
+    },
   ],
   legal: [
-    { label: "Privacy", href: "#" },
-    { label: "Terms", href: "#" },
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
   ],
 } as const;

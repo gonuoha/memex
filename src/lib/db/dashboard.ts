@@ -31,6 +31,11 @@ export type DashboardPageData = {
   pinnedItems: DashboardItem[];
   recentItems: DashboardItem[];
   showOverview: boolean;
+  firstName: string;
+  itemCount: number;
+  collectionCount: number;
+  isPro: boolean;
+  showOnboarding: boolean;
 };
 
 export type DashboardLayoutData = {
@@ -57,12 +62,20 @@ export const getDashboardPageData = cache(
         getRecentItems(user.id, DASHBOARD_RECENT_ITEMS_LIMIT),
       ]);
 
+    const firstName = user.name.trim().split(/\s+/)[0] || "there";
+
     return {
       collections,
       stats: toDashboardStats(stats),
       pinnedItems,
       recentItems,
       showOverview: userPreferences.showOverview,
+      firstName,
+      itemCount: stats.itemCount,
+      collectionCount: stats.collectionCount,
+      isPro: user.isPro,
+      showOnboarding:
+        stats.itemCount === 0 && !userPreferences.onboardingDismissed,
     };
   },
 );

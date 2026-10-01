@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { SkipToContent } from "@/components/layout/skip-to-content";
@@ -9,6 +9,7 @@ import {
   APPEARANCE_INLINE_SCRIPT,
   parseAppearance,
 } from "@/lib/appearance";
+import { getAppUrl } from "@/lib/app-url";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,9 +22,38 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const appUrl = getAppUrl();
+
 export const metadata: Metadata = {
-  title: "Memex",
-  description: "Memex application",
+  metadataBase: new URL(appUrl),
+  title: {
+    default: "Memex",
+    template: "%s · Memex",
+  },
+  description:
+    "A keyboard-first developer knowledge hub for snippets, prompts, commands, notes, links, and files.",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: appUrl,
+    siteName: "Memex",
+    title: "Memex",
+    description:
+      "A keyboard-first developer knowledge hub for snippets, prompts, commands, notes, links, and files.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Memex",
+    description:
+      "A keyboard-first developer knowledge hub for snippets, prompts, commands, notes, links, and files.",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
 };
 
 export default async function RootLayout({

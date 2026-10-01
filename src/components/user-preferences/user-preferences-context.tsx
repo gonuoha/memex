@@ -10,6 +10,7 @@ import {
 
 type UserPreferencesContextValue = {
   typeColorPosition: TypeColorPosition;
+  showLinkFavicons: boolean;
 };
 
 const UserPreferencesContext =
@@ -24,7 +25,10 @@ export function UserPreferencesProvider({
 }) {
   return (
     <UserPreferencesContext.Provider
-      value={{ typeColorPosition: initialPreferences.typeColorPosition }}
+      value={{
+        typeColorPosition: initialPreferences.typeColorPosition,
+        showLinkFavicons: initialPreferences.showLinkFavicons,
+      }}
     >
       {children}
     </UserPreferencesContext.Provider>
@@ -37,4 +41,10 @@ export function useTypeColorPosition(): TypeColorPosition {
   return (
     context?.typeColorPosition ?? DEFAULT_USER_PREFERENCES.typeColorPosition
   );
+}
+
+export function useShowLinkFavicons(): boolean {
+  const context = useContext(UserPreferencesContext);
+
+  return context?.showLinkFavicons ?? DEFAULT_USER_PREFERENCES.showLinkFavicons;
 }

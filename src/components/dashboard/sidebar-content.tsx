@@ -1,19 +1,22 @@
-import { LayoutDashboard, Star, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { FolderOpen, LayoutGrid, LayoutDashboard, Star, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { SidebarData } from "@/lib/db/sidebar";
-import { getItemTypeIcon, getItemTypeLabel, getItemTypeStyles } from "@/lib/item-type-styles";
+import {
+  getItemTypeIcon,
+  getItemTypeLabel,
+  getItemTypeStyles,
+} from "@/lib/item-type-styles";
+import { getTypeSlug } from "@/lib/item-type-slugs";
 import { cn } from "@/lib/utils";
 
 import { SidebarCollapseButton } from "./sidebar-collapse-button";
 import { SidebarNavLink } from "./sidebar-link";
 import { SidebarSection } from "./sidebar-section";
+import { SidebarUsageMeter } from "./sidebar-usage-meter";
 import { SidebarUserMenu } from "./sidebar-user-menu";
-
-function getTypeSlug(name: string) {
-  return name.toLowerCase();
-}
 
 const PRO_ITEM_TYPES = new Set(["file", "image"]);
 
@@ -26,10 +29,16 @@ type SidebarContentProps = {
 };
 
 export function SidebarContent({ sidebarData }: SidebarContentProps) {
-  const { user, itemTypes, favoriteCollections, recentCollections, itemCounts } =
-    sidebarData;
+  const {
+    user,
+    itemTypes,
+    favoriteCollections,
+    recentCollections,
+    itemCounts,
+    usage,
+  } = sidebarData;
 
-  const navItems = [
+  const homeNavItems = [
     {
       href: "/dashboard",
       label: "Dashboard",
@@ -51,17 +60,21 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground">
-      <div className="sidebar-header group-data-[collapsed]:justify-center group-data-[collapsed]:px-2 flex shrink-0 items-center justify-between p-3">
-        <span className="sidebar-text group-data-[collapsed]:hidden px-2 text-sm font-medium">
-          Navigation
-        </span>
+      <div className="sidebar-header flex shrink-0 items-center justify-between gap-2 p-3 group-data-[collapsed]:justify-center group-data-[collapsed]:px-2">
+        <Link
+          href="/dashboard"
+          className="sidebar-text group-data-[collapsed]:hidden flex min-w-0 items-center gap-2 font-semibold"
+        >
+          <FolderOpen className="size-5 shrink-0 text-primary" aria-hidden="true" />
+          <span className="truncate">Memex</span>
+        </Link>
         <SidebarCollapseButton />
       </div>
 
       <ScrollArea className="min-h-0 flex-1 px-2">
-        <div className="space-y-3 pb-4">
-          <nav className="space-y-0.5">
-            {navItems.map((item) => {
+        <div className="space-y-4 pb-4">
+          <nav className="space-y-0.5" aria-label="Home">
+            {homeNavItems.map((item) => {
               const Icon = item.icon;
               return (
                 <SidebarNavLink
@@ -71,9 +84,11 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
                   className="group-data-[collapsed]:justify-center group-data-[collapsed]:px-0"
                 >
                   <Icon className="size-4 shrink-0" />
-                  <span className="sidebar-text group-data-[collapsed]:hidden flex-1 truncate">{item.label}</span>
+                  <span className="sidebar-text group-data-[collapsed]:hidden flex-1 truncate">
+                    {item.label}
+                  </span>
                   {"count" in item && item.count != null ? (
-                    <span className="sidebar-text group-data-[collapsed]:hidden text-xs text-muted-foreground">
+                    <span className="sidebar-text group-data-[collapsed]:hidden text-xs text-muted-foreground tabular-nums">
                       {item.count}
                     </span>
                   ) : null}
@@ -82,8 +97,8 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
             })}
           </nav>
 
-          <SidebarSection title="Item Types" className="sidebar-section">
-            <nav className="space-y-0.5 px-1">
+          <SidebarSection title="Types" className="sidebar-section">
+            <nav className="space-y-0.5 px-1" aria-label="Item types">
               {itemTypes.map((type) => {
                 const Icon = getItemTypeIcon(type.icon);
                 const styles = getItemTypeStyles(type.color);
@@ -122,7 +137,7 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
                         </Badge>
                       ) : null}
                     </div>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-muted-foreground tabular-nums">
                       {type.itemCount}
                     </span>
                   </SidebarNavLink>
@@ -135,10 +150,10 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
             <div className="space-y-2">
               {favoriteCollections.length > 0 ? (
                 <div className="space-y-0.5">
-                  <p className="px-2 text-xs font-medium text-muted-foreground">
+                  <p className="px-2 text-[11px] font-medium text-muted-foreground">
                     Favorites
                   </p>
-                  <nav className="space-y-0.5">
+                  <nav className="space-y-0.5" aria-label="Favorite collections">
                     {favoriteCollections.map((collection) => (
                       <SidebarNavLink
                         key={collection.id}
@@ -147,7 +162,7 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
                       >
                         <Star className="size-4 shrink-0 fill-favorite text-favorite" />
                         <span className="flex-1 truncate">{collection.name}</span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground tabular-nums">
                           {collection.itemCount}
                         </span>
                       </SidebarNavLink>
@@ -158,10 +173,10 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
 
               {recentCollections.length > 0 ? (
                 <div className="space-y-0.5">
-                  <p className="px-2 text-xs font-medium text-muted-foreground">
+                  <p className="px-2 text-[11px] font-medium text-muted-foreground">
                     Recent
                   </p>
-                  <nav className="space-y-0.5">
+                  <nav className="space-y-0.5" aria-label="Recent collections">
                     {recentCollections.map((collection) => (
                       <SidebarNavLink
                         key={collection.id}
@@ -177,7 +192,7 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
                           }
                         />
                         <span className="flex-1 truncate">{collection.name}</span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground tabular-nums">
                           {collection.itemCount}
                         </span>
                       </SidebarNavLink>
@@ -188,16 +203,19 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
 
               <SidebarNavLink
                 href="/collections"
-                className="px-2 text-xs text-muted-foreground"
+                title="View all collections"
+                className="text-muted-foreground"
               >
-                View all collections
+                <LayoutGrid className="size-4 shrink-0" />
+                <span className="flex-1 truncate">View all</span>
               </SidebarNavLink>
             </div>
           </SidebarSection>
         </div>
       </ScrollArea>
 
-      <div className="sidebar-footer group-data-[collapsed]:flex group-data-[collapsed]:justify-center group-data-[collapsed]:px-2 shrink-0 border-t border-sidebar-border p-3">
+      <div className="sidebar-footer shrink-0 border-t border-sidebar-border p-3 group-data-[collapsed]:flex group-data-[collapsed]:justify-center group-data-[collapsed]:px-2">
+        <SidebarUsageMeter itemCount={usage.itemCount} isPro={user.isPro} />
         <SidebarUserMenu user={user} />
       </div>
     </div>
