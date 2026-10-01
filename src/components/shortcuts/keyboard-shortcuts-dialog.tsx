@@ -120,6 +120,7 @@ export function KeyboardShortcutsDialog({
             rows={[
               { label: "Dashboard", keys: ["g", "d"] },
               { label: "Favorites", keys: ["g", "f"] },
+              { label: "Tags", keys: ["g", "l"] },
               { label: "Trash", keys: ["g", "t"] },
               { label: "Collections", keys: ["g", "c"] },
               { label: "Settings", keys: ["g", "s"] },

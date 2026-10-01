@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/db/tags", () => ({
+  deleteOrphanTags: vi.fn().mockResolvedValue(0),
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     item: {
       findMany: vi.fn(),
       deleteMany: vi.fn(),
+    },
+    itemTag: {
+      findMany: vi.fn(),
     },
   },
 }));
@@ -16,15 +23,20 @@ vi.mock("@/lib/r2/storage", () => ({
 import { prisma } from "@/lib/prisma";
 import { deleteObjects } from "@/lib/r2/storage";
 
+import { deleteOrphanTags } from "./tags";
+
 import { emptyTrash, purgeExpiredTrash } from "./trash";
 
 const mockFindMany = vi.mocked(prisma.item.findMany);
 const mockDeleteMany = vi.mocked(prisma.item.deleteMany);
+const mockItemTagFindMany = vi.mocked(prisma.itemTag.findMany);
 const mockDeleteObjects = vi.mocked(deleteObjects);
+const mockDeleteOrphanTags = vi.mocked(deleteOrphanTags);
 
-function trashedRows(count: number, withFiles = false) {
+function trashedRows(count: number, withFiles = false, userId = "user-1") {
   return Array.from({ length: count }, (_, index) => ({
     id: `item-${index}`,
+    userId,
     fileUrl: withFiles ? `users/user-1/file-${index}.txt` : null,
   }));
 }
@@ -33,6 +45,7 @@ describe("emptyTrash", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => {});
+    mockItemTagFindMany.mockResolvedValue([]);
   });
 
   it("only deletes the user's trashed items", async () => {
@@ -52,8 +65,11 @@ describe("emptyTrash", () => {
 
   it("re-applies the trash filter on delete and removes files for deleted rows", async () => {
     mockFindMany.mockResolvedValueOnce([
-      { id: "a", fileUrl: "users/user-1/a.txt" },
-      { id: "b", fileUrl: null },
+      { id: "a", userId: "user-1", fileUrl: "users/user-1/a.txt" },
+      { id: "b", userId: "user-1", fileUrl: null },
+    ] as never);
+    mockItemTagFindMany.mockResolvedValueOnce([
+      { tagId: "tag-1", itemId: "a", item: { userId: "user-1" } },
     ] as never);
     mockDeleteMany.mockResolvedValueOnce({ count: 2 });
 
@@ -68,13 +84,14 @@ describe("emptyTrash", () => {
       },
     });
     expect(mockDeleteObjects).toHaveBeenCalledWith(["users/user-1/a.txt"]);
+    expect(mockDeleteOrphanTags).toHaveBeenCalledWith("user-1", ["tag-1"]);
   });
 
   it("keeps files of items restored between selection and deletion", async () => {
     mockFindMany
       .mockResolvedValueOnce([
-        { id: "a", fileUrl: "users/user-1/a.txt" },
-        { id: "b", fileUrl: "users/user-1/b.txt" },
+        { id: "a", userId: "user-1", fileUrl: "users/user-1/a.txt" },
+        { id: "b", userId: "user-1", fileUrl: "users/user-1/b.txt" },
       ] as never)
       .mockResolvedValueOnce([{ id: "b" }] as never);
     mockDeleteMany.mockResolvedValueOnce({ count: 1 });
@@ -87,7 +104,7 @@ describe("emptyTrash", () => {
 
   it("still reports deleted rows when R2 deletion fails", async () => {
     mockFindMany.mockResolvedValueOnce([
-      { id: "a", fileUrl: "users/user-1/a.txt" },
+      { id: "a", userId: "user-1", fileUrl: "users/user-1/a.txt" },
     ] as never);
     mockDeleteMany.mockResolvedValueOnce({ count: 1 });
     mockDeleteObjects.mockRejectedValueOnce(new Error("R2 unavailable"));
@@ -113,6 +130,7 @@ describe("emptyTrash", () => {
 describe("purgeExpiredTrash", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockItemTagFindMany.mockResolvedValue([]);
   });
 
   it("only selects items trashed before the retention deadline", async () => {

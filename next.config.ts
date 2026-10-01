@@ -58,6 +58,19 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
+        source: "/s/:path*",
+        headers: [
+          {
+            key: "X-Robots-Tag",
+            value: "noindex, nofollow",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "no-referrer",
+          },
+        ],
+      },
+      {
         // Config headers win over route handler headers, so the download route
         // must be excluded to keep its own sandbox CSP.
         source: "/((?!api/items/[^/]+/download).*)",

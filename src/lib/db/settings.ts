@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 
 export type SettingsData = {
   user: {
+    id: string;
     email: string;
     hasPassword: boolean;
     isPro: boolean;
@@ -66,6 +67,7 @@ export const getSettingsData = cache(async (): Promise<SettingsData> => {
     prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
+        id: true,
         email: true,
         password: true,
         isPro: true,
@@ -86,6 +88,7 @@ export const getSettingsData = cache(async (): Promise<SettingsData> => {
 
   return {
     user: {
+      id: user.id,
       email: user.email,
       hasPassword: Boolean(user.password),
       isPro: user.isPro,

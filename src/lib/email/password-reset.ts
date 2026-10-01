@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 
+import { revokeAllActiveApiKeysForUser } from "@/lib/db/api-keys";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/validate-email";
 
@@ -80,8 +81,15 @@ export async function resetPasswordWithToken(
     return { status: "invalid" };
   }
 
-  await prisma.$transaction([
-    prisma.user.updateMany({
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findFirst({
+      where: {
+        email: { equals: validation.email, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+
+    await tx.user.updateMany({
       where: {
         email: { equals: validation.email, mode: "insensitive" },
       },
@@ -89,16 +97,21 @@ export async function resetPasswordWithToken(
         password: passwordHash,
         sessionVersion: { increment: 1 },
       },
-    }),
-    prisma.verificationToken.delete({
+    });
+
+    if (user) {
+      await revokeAllActiveApiKeysForUser(user.id, tx);
+    }
+
+    await tx.verificationToken.delete({
       where: {
         identifier_token: {
           identifier: record.identifier,
           token: record.token,
         },
       },
-    }),
-  ]);
+    });
+  });
 
   return validation;
 }

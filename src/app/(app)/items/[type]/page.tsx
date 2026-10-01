@@ -190,6 +190,7 @@ export default async function ItemsByTypePage({
               items={data.result.items}
               view={view}
               typeName={itemType.name}
+              tagFilterBasePath={basePath}
             />
           )}
           <div className="mt-8">

@@ -206,6 +206,21 @@ describe("resolveShortcutAction", () => {
     expect(result.action).toEqual({ type: "open_shortcuts_help" });
   });
 
+  it("navigates to tags on g then l", () => {
+    const afterG = resolveShortcutAction(
+      INITIAL_SEQUENCE_STATE,
+      { ...noModifiers, key: "g" },
+      now,
+    );
+    const afterL = resolveShortcutAction(
+      afterG.state,
+      { ...noModifiers, key: "l" },
+      now + 50,
+    );
+
+    expect(afterL.action).toEqual({ type: "navigate", href: "/tags" });
+  });
+
   it("navigates to collections on g then c instead of creating an item", () => {
     const afterG = resolveShortcutAction(
       INITIAL_SEQUENCE_STATE,

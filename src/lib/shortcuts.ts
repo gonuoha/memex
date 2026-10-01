@@ -25,6 +25,7 @@ export const INITIAL_SEQUENCE_STATE: SequenceState = {
 const G_NAV_MAP: Record<string, string> = {
   d: "/dashboard",
   f: "/favorites",
+  l: "/tags",
   t: "/trash",
   s: "/settings",
   c: "/collections",

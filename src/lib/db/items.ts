@@ -16,9 +16,36 @@ import { prisma } from "@/lib/prisma";
 
 import type { CollectionItemType } from "./collections";
 import { activeItemWhere } from "./item-filters";
+import { countUserTagsWithActiveItems, deleteOrphanTags } from "./tags";
 import { daysUntilPermanentDeletion } from "./trash-retention";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
+
+export async function resolveTagNamesForUser(
+  userId: string,
+  names: string[],
+  db: DbClient = prisma,
+): Promise<string[]> {
+  if (names.length === 0) {
+    return [];
+  }
+
+  const existing = await db.tag.findMany({
+    where: {
+      userId,
+      OR: names.map((name) => ({
+        name: { equals: name, mode: "insensitive" },
+      })),
+    },
+    select: { name: true },
+  });
+
+  const canonicalByLower = new Map(
+    existing.map((tag) => [tag.name.toLowerCase(), tag.name]),
+  );
+
+  return names.map((name) => canonicalByLower.get(name.toLowerCase()) ?? name);
+}
 
 const pinnedFirstByUpdatedAt = [
   { isPinned: "desc" as const },
@@ -145,6 +172,7 @@ export type UserItemStats = {
   favoriteCollectionCount: number;
   pinnedCount: number;
   trashCount: number;
+  tagCount: number;
 };
 
 export type TrashedItem = {
@@ -323,7 +351,7 @@ function mapFileItem(item: {
   };
 }
 
-function mapItemDetail(item: {
+export type ItemDetailRow = {
   id: string;
   title: string;
   description: string | null;
@@ -341,7 +369,11 @@ function mapItemDetail(item: {
   type: CollectionItemType;
   tags: { tag: { name: string } }[];
   collections: { collection: { id: string; name: string } }[];
-}): ItemDetail {
+};
+
+export const itemDetailSelectFields = itemDetailSelect;
+
+export function mapItemDetail(item: ItemDetailRow): ItemDetail {
   return {
     id: item.id,
     title: item.title,
@@ -411,6 +443,26 @@ export async function getItemById(
   return mapItemDetail(item);
 }
 
+export async function getActiveItemsByIds(
+  userId: string,
+  ids: string[],
+): Promise<ItemDetail[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const items = await prisma.item.findMany({
+    where: activeItemWhere(userId, { id: { in: ids } }),
+    select: itemDetailSelect,
+  });
+
+  const byId = new Map(items.map((item) => [item.id, mapItemDetail(item)]));
+
+  return ids
+    .map((id) => byId.get(id))
+    .filter((item): item is ItemDetail => item !== undefined);
+}
+
 export type UpdateItemData = {
   title: string;
   description: string | null;
@@ -434,6 +486,8 @@ export type CreateItemData = {
   tags: string[];
   collectionIds: string[];
   contentType: "text" | "file";
+  isFavorite?: boolean;
+  isPinned?: boolean;
 };
 
 export async function createItem(
@@ -441,6 +495,8 @@ export async function createItem(
   data: CreateItemData,
   db: DbClient = prisma,
 ): Promise<ItemDetail> {
+  const tagNames = await resolveTagNamesForUser(userId, data.tags, db);
+
   const item = await db.item.create({
     data: {
       userId,
@@ -454,8 +510,12 @@ export async function createItem(
       fileName: data.fileName,
       fileSize: data.fileSize,
       contentType: data.contentType,
+      ...(data.isFavorite !== undefined
+        ? { isFavorite: data.isFavorite }
+        : {}),
+      ...(data.isPinned !== undefined ? { isPinned: data.isPinned } : {}),
       tags: {
-        create: data.tags.map((name) => ({
+        create: tagNames.map((name) => ({
           tag: {
             connectOrCreate: {
               where: { userId_name: { userId, name } },
@@ -492,38 +552,49 @@ export async function updateItem(
     return null;
   }
 
-  const item = await prisma.item.update({
-    where: { id: itemId },
-    data: {
-      title: data.title,
-      description: data.description,
-      content: data.content,
-      url: data.url,
-      language: data.language,
-      tags: {
-        deleteMany: {},
-        create: data.tags.map((name) => ({
-          tag: {
-            connectOrCreate: {
-              where: { userId_name: { userId, name } },
-              create: { userId, name },
-            },
-          },
-        })),
-      },
-      collections: {
-        deleteMany: {},
-        create: data.collectionIds.map((collectionId) => ({
-          collection: {
-            connect: { id: collectionId },
-          },
-        })),
-      },
-    },
-    select: itemDetailSelect,
-  });
+  return prisma.$transaction(async (tx) => {
+    const previousTagLinks = await tx.itemTag.findMany({
+      where: { itemId },
+      select: { tagId: true },
+    });
+    const previousTagIds = previousTagLinks.map((link) => link.tagId);
+    const tagNames = await resolveTagNamesForUser(userId, data.tags, tx);
 
-  return mapItemDetail(item);
+    const item = await tx.item.update({
+      where: { id: itemId },
+      data: {
+        title: data.title,
+        description: data.description,
+        content: data.content,
+        url: data.url,
+        language: data.language,
+        tags: {
+          deleteMany: {},
+          create: tagNames.map((name) => ({
+            tag: {
+              connectOrCreate: {
+                where: { userId_name: { userId, name } },
+                create: { userId, name },
+              },
+            },
+          })),
+        },
+        collections: {
+          deleteMany: {},
+          create: data.collectionIds.map((collectionId) => ({
+            collection: {
+              connect: { id: collectionId },
+            },
+          })),
+        },
+      },
+      select: itemDetailSelect,
+    });
+
+    await deleteOrphanTags(userId, previousTagIds, tx);
+
+    return mapItemDetail(item);
+  });
 }
 
 export type ToggleItemFavoriteResult = {
@@ -646,12 +717,25 @@ export async function deleteItem(
     return null;
   }
 
-  await prisma.item.update({
-    where: { id: itemId },
-    data: {
-      deletedAt: new Date(),
-      isPinned: false,
-    },
+  const now = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    await tx.shareLink.updateMany({
+      where: {
+        userId,
+        itemId,
+        revokedAt: null,
+      },
+      data: { revokedAt: now },
+    });
+
+    await tx.item.update({
+      where: { id: itemId },
+      data: {
+        deletedAt: now,
+        isPinned: false,
+      },
+    });
   });
 
   return {
@@ -722,6 +806,12 @@ export async function permanentlyDeleteItem(
     return null;
   }
 
+  const tagLinks = await prisma.itemTag.findMany({
+    where: { itemId },
+    select: { tagId: true },
+  });
+  const tagIds = tagLinks.map((link) => link.tagId);
+
   const { count } = await prisma.item.deleteMany({
     where: { id: itemId, userId, deletedAt: { not: null } },
   });
@@ -729,6 +819,8 @@ export async function permanentlyDeleteItem(
   if (count === 0) {
     return null;
   }
+
+  await deleteOrphanTags(userId, tagIds);
 
   return {
     typeName: existing.type.name,
@@ -831,6 +923,38 @@ export async function getItemTypeTags(
       count: countByTagId.get(tag.id) ?? 0,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getItemsByTagPaginated(
+  userId: string,
+  tagId: string,
+  page: number,
+  query: Pick<ItemsListQuery, "sort"> = { sort: "updated" },
+  pageSize: number = ITEMS_PER_PAGE,
+): Promise<PaginatedResult<DashboardItem>> {
+  const where = activeItemWhere(userId, {
+    tags: {
+      some: { tagId },
+    },
+  });
+  const totalCount = await prisma.item.count({ where });
+  const totalPages = getTotalPages(totalCount, pageSize);
+  const normalizedPage = normalizePage(page, totalPages);
+  const items = await prisma.item.findMany({
+    where,
+    orderBy: getItemsListOrderBy(query.sort),
+    skip: (normalizedPage - 1) * pageSize,
+    take: pageSize,
+    select: itemSelect,
+  });
+
+  return {
+    items: await mapListItems(userId, items),
+    totalCount,
+    page: normalizedPage,
+    pageSize,
+    totalPages,
+  };
 }
 
 export async function getItemsByTypePaginated(
@@ -968,6 +1092,7 @@ export type SidebarItemCounts = {
   favoriteCount: number;
   pinnedCount: number;
   trashCount: number;
+  tagCount: number;
 };
 
 export async function getSystemItemTypes(): Promise<SystemItemType[]> {
@@ -1015,6 +1140,7 @@ export const getUserItemStats = cache(
     favoriteCollectionCount,
     pinnedCount,
     trashCount,
+    tagCount,
   ] = await Promise.all([
     prisma.item.count({ where: activeItemWhere(userId) }),
     prisma.collection.count({ where: { userId } }),
@@ -1022,6 +1148,7 @@ export const getUserItemStats = cache(
     prisma.collection.count({ where: { userId, isFavorite: true } }),
     prisma.item.count({ where: activeItemWhere(userId, { isPinned: true }) }),
     prisma.item.count({ where: { userId, deletedAt: { not: null } } }),
+    countUserTagsWithActiveItems(userId),
   ]);
 
   return {
@@ -1031,6 +1158,7 @@ export const getUserItemStats = cache(
     favoriteCollectionCount,
     pinnedCount,
     trashCount,
+    tagCount,
   };
   },
 );
@@ -1090,5 +1218,6 @@ export function toSidebarItemCounts(
     favoriteCount: stats.favoriteItemCount + stats.favoriteCollectionCount,
     pinnedCount: stats.pinnedCount,
     trashCount: stats.trashCount,
+    tagCount: stats.tagCount,
   };
 }

@@ -17,9 +17,10 @@ import { useItemDrawer } from "./item-drawer-context";
 
 type ItemCardProps = {
   item: DashboardItem;
+  tagFilterBasePath?: string;
 };
 
-export function ItemCard({ item }: ItemCardProps) {
+export function ItemCard({ item, tagFilterBasePath }: ItemCardProps) {
   const { openItem } = useItemDrawer();
   const typeColorPosition = useTypeColorPosition();
   const typeColorBorder = getTypeColorBorderProps(
@@ -54,7 +55,11 @@ export function ItemCard({ item }: ItemCardProps) {
           className="-mt-0.5 -mr-1.5"
         />
       </div>
-      <ItemCardMeta item={item} className="mt-2" />
+      <ItemCardMeta
+        item={item}
+        className="mt-2"
+        tagFilterBasePath={tagFilterBasePath}
+      />
       <ItemCardPreview item={item} />
     </article>
   );
@@ -62,13 +67,18 @@ export function ItemCard({ item }: ItemCardProps) {
 
 type ItemsGridProps = {
   items: DashboardItem[];
+  tagFilterBasePath?: string;
 };
 
-export function ItemsGrid({ items }: ItemsGridProps) {
+export function ItemsGrid({ items, tagFilterBasePath }: ItemsGridProps) {
   return (
     <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
-        <ItemCard key={item.id} item={item} />
+        <ItemCard
+          key={item.id}
+          item={item}
+          tagFilterBasePath={tagFilterBasePath}
+        />
       ))}
     </div>
   );

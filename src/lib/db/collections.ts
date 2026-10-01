@@ -346,6 +346,7 @@ export async function createCollection(
   data: {
     name: string;
     description: string | null;
+    isFavorite?: boolean;
   },
   db: DbClient = prisma,
 ): Promise<CreatedCollection> {
@@ -354,6 +355,9 @@ export async function createCollection(
       userId,
       name: data.name,
       description: data.description,
+      ...(data.isFavorite !== undefined
+        ? { isFavorite: data.isFavorite }
+        : {}),
     },
     select: {
       id: true,

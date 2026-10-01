@@ -8,35 +8,47 @@ import type { ItemsView } from "@/lib/user-preferences";
 type ItemsListViewProps = {
   items: DashboardItem[];
   view: ItemsView;
-  typeName: string;
+  typeName?: string;
   fileItems?: FileListItem[];
+  tagFilterBasePath?: string;
+  mixedTypes?: boolean;
 };
 
 export function ItemsListView({
   items,
   view,
-  typeName,
+  typeName = "",
   fileItems = [],
+  tagFilterBasePath,
+  mixedTypes = false,
 }: ItemsListViewProps) {
   const normalizedType = typeName.toLowerCase();
 
-  if (normalizedType === "file") {
-    return <FileList items={fileItems} />;
-  }
+  if (!mixedTypes && typeName) {
+    if (normalizedType === "file") {
+      return <FileList items={fileItems} />;
+    }
 
-  if (normalizedType === "image") {
-    return <ImageGalleryGrid items={items} />;
+    if (normalizedType === "image") {
+      return <ImageGalleryGrid items={items} />;
+    }
   }
 
   if (view === "list") {
     return (
       <div className="space-y-2">
         {items.map((item) => (
-          <ItemRow key={item.id} item={item} />
+          <ItemRow
+            key={item.id}
+            item={item}
+            tagFilterBasePath={tagFilterBasePath}
+          />
         ))}
       </div>
     );
   }
 
-  return <ItemsGrid items={items} />;
+  return (
+    <ItemsGrid items={items} tagFilterBasePath={tagFilterBasePath} />
+  );
 }

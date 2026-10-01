@@ -32,9 +32,26 @@ model User {
   collections Collection[]
   tags        Tag[]
   pendingUploads PendingUpload[]
+  apiKeys     ApiKey[]
+  shareLinks  ShareLink[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  prefix     String
+  hashedKey  String    @unique
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model PendingUpload {
@@ -112,6 +129,7 @@ model Item {
 
   collections ItemCollection[]
   tags        ItemTag[]
+  shareLinks  ShareLink[]
 
   deletedAt DateTime?
 
@@ -126,6 +144,7 @@ model Item {
   @@index([userId, isPinned])
   @@index([userId, isFavorite])
   @@index([userId, deletedAt])
+  @@index([userId, updatedAt(sort: Desc), id(sort: Desc)])
   @@index([searchVector], type: Gin, map: "Item_searchVector_idx")
   @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Item_title_trgm_idx")
 }
@@ -203,4 +222,21 @@ model ItemCollection {
 
   @@id([itemId, collectionId])
   @@index([collectionId])
+}
+
+model ShareLink {
+  id           String    @id @default(cuid())
+  token        String    @unique
+  itemId       String
+  item         Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+
+  @@index([itemId])
+  @@index([userId])
 }

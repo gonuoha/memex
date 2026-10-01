@@ -64,6 +64,13 @@ const accountDeletionLimiter = createLimiter("account-deletion", 3, "1 h");
 const aiLimiter = createLimiter("ai", 20, "1 h");
 const searchLimiter = createLimiter("search", 120, "1 m");
 const uploadUrlLimiter = createLimiter("upload-url", 60, "1 m");
+const apiKeyCreateLimiter = createLimiter("api-key-create", 10, "1 h");
+export const API_V1_RATE_LIMIT = 120;
+const apiV1Limiter = createLimiter("api-v1", API_V1_RATE_LIMIT, "1 m");
+
+const AUTH_FAIL_KEY_PREFIX = "api-v1-auth-fail-count:";
+const AUTH_FAIL_MAX_ATTEMPTS = 30;
+const AUTH_FAIL_WINDOW_SECONDS = 60;
 
 function parseHops(value: string | null): string[] {
   return (value ?? "")
@@ -202,6 +209,72 @@ export async function checkUploadUrlRateLimit(
   return checkLimiter(uploadUrlLimiter, userId);
 }
 
+export async function checkApiKeyCreateRateLimit(
+  userId: string,
+): Promise<RateLimitResult> {
+  return checkLimiter(apiKeyCreateLimiter, userId);
+}
+
+export async function checkApiV1RateLimit(
+  keyId: string,
+): Promise<RateLimitResult> {
+  return checkLimiter(apiV1Limiter, keyId);
+}
+
+function authFailureLimiterFailOpen(reason: string, error?: unknown): RateLimitResult {
+  console.warn(reason, error ?? "");
+  return FAIL_OPEN_RESULT;
+}
+
+export async function recordApiV1AuthFailure(
+  request: Request,
+): Promise<RateLimitResult> {
+  const ip = getClientIp(request);
+
+  if (ip === "unknown") {
+    return FAIL_OPEN_RESULT;
+  }
+
+  const redis = createRedis();
+
+  if (!redis) {
+    return authFailureLimiterFailOpen(
+      "API v1 auth failure limiter unavailable; failing open",
+    );
+  }
+
+  const key = `${AUTH_FAIL_KEY_PREFIX}${ip}`;
+
+  try {
+    const pipeline = redis.multi();
+    pipeline.incr(key);
+    pipeline.ttl(key);
+    const results = await pipeline.exec();
+
+    const count = Number(results[0]);
+    const ttlSeconds = Number(results[1]);
+
+    if (ttlSeconds < 0) {
+      await redis.expire(key, AUTH_FAIL_WINDOW_SECONDS);
+    }
+
+    const windowSeconds =
+      ttlSeconds > 0 ? ttlSeconds : AUTH_FAIL_WINDOW_SECONDS;
+    const overBudget = count > AUTH_FAIL_MAX_ATTEMPTS;
+
+    return {
+      success: !overBudget,
+      remaining: Math.max(0, AUTH_FAIL_MAX_ATTEMPTS - count),
+      reset: Date.now() + windowSeconds * 1000,
+    };
+  } catch (error) {
+    return authFailureLimiterFailOpen(
+      "API v1 auth failure limiter error; failing open",
+      error,
+    );
+  }
+}
+
 function getRetryAfterSeconds(reset: number): number {
   return Math.max(1, Math.ceil((reset - Date.now()) / 1000));
 }
@@ -225,4 +298,26 @@ export function rateLimitedResponse(result: RateLimitResult): NextResponse {
       },
     },
   );
+}
+
+export function buildRateLimitHeaders(
+  result: RateLimitResult,
+  options?: { limit?: number },
+): HeadersInit {
+  if (result.remaining < 0) {
+    return result.success
+      ? {}
+      : { "Retry-After": String(getRetryAfterSeconds(result.reset)) };
+  }
+
+  const retryAfterSeconds = getRetryAfterSeconds(result.reset);
+
+  return {
+    ...(options?.limit !== undefined
+      ? { "X-RateLimit-Limit": String(options.limit) }
+      : {}),
+    "X-RateLimit-Remaining": String(Math.max(0, result.remaining)),
+    "X-RateLimit-Reset": String(Math.ceil(result.reset / 1000)),
+    ...(result.success ? {} : { "Retry-After": String(retryAfterSeconds) }),
+  };
 }

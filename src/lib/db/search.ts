@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import { buildApiV1TagIdFilterSql } from "@/lib/db/api-v1-tag-filter";
 import { prisma } from "@/lib/prisma";
 import {
   buildContainsLikePattern,
@@ -285,4 +286,53 @@ export async function searchCollections(
     name: row.name,
     itemCount: Number(row.item_count),
   }));
+}
+
+export type ApiV1ItemSearchFilters = {
+  typeSlug: string | null;
+  tagId: string | null;
+  collectionId: string | null;
+};
+
+function buildApiV1CollectionFilterSql(collectionId: string | null): Prisma.Sql {
+  if (!collectionId) {
+    return Prisma.empty;
+  }
+
+  return Prisma.sql`AND EXISTS (
+    SELECT 1
+    FROM "ItemCollection" ic
+    WHERE ic."itemId" = i."id"
+      AND ic."collectionId" = ${collectionId}
+  )`;
+}
+
+export async function searchApiV1ItemIds(
+  userId: string,
+  q: string,
+  filters: ApiV1ItemSearchFilters,
+  limit: number,
+  offset: number,
+): Promise<string[]> {
+  const search = buildTextSearchSql(q);
+  const typeFilter = filters.typeSlug
+    ? Prisma.sql`AND lower(it."name") = ANY(${getTypeNameCandidates(filters.typeSlug)}::text[])`
+    : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT i."id" AS id
+    FROM "Item" i
+    INNER JOIN "ItemType" it ON it."id" = i."typeId"
+    WHERE i."userId" = ${userId}
+      AND i."deletedAt" IS NULL
+      ${typeFilter}
+      ${buildApiV1TagIdFilterSql(filters.tagId)}
+      ${buildApiV1CollectionFilterSql(filters.collectionId)}
+      ${search.match}
+    ORDER BY ${search.orderBy}, i."id" DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `;
+
+  return rows.map((row) => row.id);
 }

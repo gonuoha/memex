@@ -19,6 +19,7 @@ import {
   type SelectableCollection,
 } from "@/components/collections/collection-multi-select";
 import { ItemFavoriteButton } from "@/components/items/item-favorite-button";
+import { ItemShareDialog } from "@/components/items/item-share-dialog";
 import { ItemFormFields } from "@/components/items/item-form-fields";
 import { ItemPinButton } from "@/components/items/item-pin-button";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
@@ -52,6 +53,7 @@ import type { ItemDetail } from "@/lib/db/items";
 import { getItemCopyText } from "@/lib/item-copy";
 import { formatFileSize } from "@/lib/file-upload";
 import { getItemTypeIcon, getItemTypeStyles } from "@/lib/item-type-styles";
+import { isShareableItemType } from "@/lib/share-links/constants";
 import { cn } from "@/lib/utils";
 
 import { useItemDrawer } from "./item-drawer-context";
@@ -168,6 +170,7 @@ function ItemDrawerContent({
   const typeName = item.type.name.toLowerCase();
   const showExplainableCodeEditor = CODE_EDITOR_TYPE_NAMES.has(typeName);
   const showOptimizablePrompt = typeName === "prompt";
+  const showShare = isShareableItemType(typeName);
 
   async function handleCopy() {
     await copy(getItemCopyText(item));
@@ -284,6 +287,9 @@ function ItemDrawerContent({
           Copy
         </Button>
         <ItemDownloadLink item={item} />
+        {showShare ? (
+          <ItemShareDialog itemId={item.id} itemTitle={item.title} />
+        ) : null}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onEdit}>
             <Pencil />

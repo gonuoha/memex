@@ -8,11 +8,18 @@ import {
 import { AccountActionsCard } from "@/components/settings/account-actions-card";
 import { BillingCard } from "@/components/settings/billing-card";
 import { UserPreferencesCard } from "@/components/settings/user-preferences-card";
+import { ApiKeysCard } from "@/components/settings/api-keys-card";
 import { EditorPreferencesCard } from "@/components/settings/editor-preferences-card";
+import { DataCard } from "@/components/settings/data-card";
+import { SharedLinksCard } from "@/components/settings/shared-links-card";
+import { listApiKeysForUser } from "@/lib/db/api-keys";
+import { listActiveShareLinksForUser } from "@/lib/db/share-links";
 import { getSettingsData } from "@/lib/db/settings";
 
 export default async function SettingsPage() {
   const { user, usage, userPreferences } = await getSettingsData();
+  const apiKeys = await listApiKeysForUser(user.id);
+  const shareLinks = await listActiveShareLinksForUser(user.id);
 
   return (
     <PageContainer>
@@ -24,6 +31,9 @@ export default async function SettingsPage() {
       <PageContent className="space-y-6">
         <UserPreferencesCard initialPreferences={userPreferences} />
         <EditorPreferencesCard />
+        <DataCard />
+        <SharedLinksCard links={shareLinks} />
+        <ApiKeysCard isPro={user.isPro} initialKeys={apiKeys} />
         <Suspense fallback={null}>
           <BillingCard
             isPro={user.isPro}

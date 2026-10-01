@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FolderOpen, LayoutGrid, LayoutDashboard, Star, Trash2 } from "lucide-react";
+import { FolderOpen, LayoutGrid, LayoutDashboard, Star, Tags, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -49,6 +49,12 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
       label: "Favorites",
       icon: Star,
       count: itemCounts.favoriteCount,
+    },
+    {
+      href: "/tags",
+      label: "Tags",
+      icon: Tags,
+      count: itemCounts.tagCount,
     },
     {
       href: "/trash",

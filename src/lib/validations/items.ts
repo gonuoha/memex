@@ -1,8 +1,9 @@
 import { z } from "zod";
 
 import { parseItemTypeSlug } from "@/lib/item-type-slugs";
+import { tagNameSchema } from "@/lib/validations/tags";
 
-function emptyToNull(value: unknown) {
+export function emptyToNull(value: unknown) {
   return typeof value === "string" && value.trim() === "" ? null : value;
 }
 
@@ -18,7 +19,7 @@ const descriptionSchema = nullableTrimmedStringMax(2000);
 const contentSchema = nullableTrimmedStringMax(100_000);
 const languageSchema = nullableTrimmedStringMax(50);
 
-const httpHttpsUrlSchema = z.preprocess(
+export const httpHttpsUrlSchema = z.preprocess(
   emptyToNull,
   z
     .string()
@@ -36,8 +37,8 @@ const httpHttpsUrlSchema = z.preprocess(
     .nullable(),
 );
 
-const tagListSchema = z
-  .array(z.string().trim().min(1).max(40))
+export const tagListSchema = z
+  .array(tagNameSchema)
   .max(20)
   .default([])
   .transform((tags) => {
@@ -118,6 +119,7 @@ export const createItemSchema = z
   });
 
 export type CreatableItemType = z.infer<typeof creatableItemTypeSchema>;
+export type CreateItemInput = z.infer<typeof createItemSchema>;
 
 export function parseCreatableItemTypeFromPathname(
   pathname: string,

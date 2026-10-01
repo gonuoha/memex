@@ -1,12 +1,15 @@
 "use client";
 
 import { Pin } from "lucide-react";
+import Link from "next/link";
 
 import type { DashboardItem } from "@/lib/db/items";
 import { formatLongDate } from "@/lib/format-date";
 import { adaptTypeColor } from "@/lib/item-type-color";
 import { getItemTypeLabel } from "@/lib/item-type-styles";
+import { buildItemsListQueryString } from "@/lib/items-list-params";
 import { formatRelativeDate } from "@/lib/relative-date";
+import { encodeTagNameForPath } from "@/lib/validations/tags";
 import { cn } from "@/lib/utils";
 
 const MAX_VISIBLE_TAGS = 3;
@@ -14,9 +17,25 @@ const MAX_VISIBLE_TAGS = 3;
 type ItemCardMetaProps = {
   item: DashboardItem;
   className?: string;
+  tagFilterBasePath?: string;
 };
 
-export function ItemCardMeta({ item, className }: ItemCardMetaProps) {
+function getTagHref(tagName: string, tagFilterBasePath?: string): string {
+  if (tagFilterBasePath) {
+    return `${tagFilterBasePath}${buildItemsListQueryString({
+      tag: tagName,
+      page: 1,
+    })}`;
+  }
+
+  return `/tags/${encodeTagNameForPath(tagName)}`;
+}
+
+export function ItemCardMeta({
+  item,
+  className,
+  tagFilterBasePath,
+}: ItemCardMetaProps) {
   const dotStyle = item.type.color?.startsWith("#")
     ? { backgroundColor: adaptTypeColor(item.type.color) }
     : undefined;
@@ -49,12 +68,14 @@ export function ItemCardMeta({ item, className }: ItemCardMetaProps) {
         </span>
       ) : null}
       {visibleTags.map((tag) => (
-        <span
+        <Link
           key={tag}
-          className="max-w-[8rem] truncate rounded-md bg-muted px-1.5 py-0.5"
+          href={getTagHref(tag, tagFilterBasePath)}
+          onClick={(event) => event.stopPropagation()}
+          className="relative z-10 inline-flex min-h-6 max-w-[8rem] items-center truncate rounded-md bg-muted px-1.5 py-0.5 transition-colors hover:bg-muted/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           {tag}
-        </span>
+        </Link>
       ))}
       {hiddenTagCount > 0 ? (
         <span className="shrink-0">+{hiddenTagCount}</span>

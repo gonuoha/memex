@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { deleteObjects } from "@/lib/r2/storage";
 
+import { deleteOrphanTags } from "./tags";
 import { getTrashPurgeDeadline } from "./trash-retention";
 
 const TRASH_DELETE_BATCH_SIZE = 100;
@@ -63,7 +64,7 @@ async function deleteTrashedItems(
       where,
       orderBy: { deletedAt: "asc" },
       take: TRASH_DELETE_BATCH_SIZE,
-      select: { id: true, fileUrl: true },
+      select: { id: true, fileUrl: true, userId: true },
     });
 
     if (batch.length === 0) {
@@ -71,6 +72,15 @@ async function deleteTrashedItems(
     }
 
     const ids = batch.map((item) => item.id);
+    const tagLinksBeforeDelete = await prisma.itemTag.findMany({
+      where: { itemId: { in: ids } },
+      select: {
+        tagId: true,
+        itemId: true,
+        item: { select: { userId: true } },
+      },
+    });
+
     const { count } = await prisma.item.deleteMany({
       where: { ...where, id: { in: ids } },
     });
@@ -85,6 +95,31 @@ async function deleteTrashedItems(
     );
 
     deletedCount += count;
+
+    if (count > 0) {
+      const deletedItemIds = new Set(
+        batch
+          .filter((item) => !survivingIds.has(item.id))
+          .map((item) => item.id),
+      );
+      const tagIdsByUser = new Map<string, Set<string>>();
+
+      for (const link of tagLinksBeforeDelete) {
+        if (!deletedItemIds.has(link.itemId)) {
+          continue;
+        }
+
+        const tagIds = tagIdsByUser.get(link.item.userId) ?? new Set<string>();
+        tagIds.add(link.tagId);
+        tagIdsByUser.set(link.item.userId, tagIds);
+      }
+
+      await Promise.all(
+        [...tagIdsByUser.entries()].map(([ownerId, tagIds]) =>
+          deleteOrphanTags(ownerId, [...tagIds]),
+        ),
+      );
+    }
 
     if (batch.length < TRASH_DELETE_BATCH_SIZE) {
       break;

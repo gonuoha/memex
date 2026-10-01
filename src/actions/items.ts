@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { parseActionInput } from "@/lib/actions/parse-action-input";
 import { requireSession } from "@/lib/actions/require-session";
+import { executeCreateTextItem } from "@/lib/items/execute-create-item";
 import {
   createItem as createItemInDb,
   deleteItem as deleteItemInDb,
@@ -175,24 +176,34 @@ export async function createItem(
     return parsed;
   }
 
+  const isPro = await getUserIsPro(userId);
+  const usesFileContent = isProOnlyItemType(parsed.data.type);
+
+  if (!usesFileContent) {
+    const created = await executeCreateTextItem(userId, parsed.data);
+
+    if (!created.success) {
+      return { success: false, error: created.message };
+    }
+
+    revalidatePath(`/items/${getTypeSlug(parsed.data.type)}`);
+    revalidatePath("/dashboard");
+
+    return { success: true, data: created.data };
+  }
+
+  if (!isPro) {
+    return {
+      success: false,
+      error: "File and image uploads require a Pro subscription",
+    };
+  }
+
   const itemType = await getItemTypeBySlug(userId, parsed.data.type);
 
   if (!itemType) {
     return { success: false, error: "Invalid item type" };
   }
-
-  const isPro = await getUserIsPro(userId);
-
-  if (isProOnlyItemType(parsed.data.type)) {
-    if (!isPro) {
-      return {
-        success: false,
-        error: "File and image uploads require a Pro subscription",
-      };
-    }
-  }
-
-  const usesFileContent = isProOnlyItemType(parsed.data.type);
   let uploadedFile: UploadedFile | null = null;
 
   if (usesFileContent) {

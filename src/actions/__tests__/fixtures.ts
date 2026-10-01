@@ -9,4 +9,5 @@ export const defaultStats = {
   favoriteCollectionCount: 0,
   pinnedCount: 0,
   trashCount: 0,
+  tagCount: 0,
 } satisfies UserItemStats;

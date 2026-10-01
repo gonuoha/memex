@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, List, Star } from "lucide-react";
+import { LayoutGrid, List, Star, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -120,34 +120,48 @@ export function ItemsListToolbar({
         </Select>
 
         {showTagFilter ? (
-          <Select
-            value={tag ?? ALL_TAGS_VALUE}
-            onValueChange={(value) =>
-              router.push(
-                buildHref({ tag: value === ALL_TAGS_VALUE ? null : value }),
-              )
-            }
-          >
-            <SelectTrigger
-              className="w-full data-[size=default]:h-9 sm:w-40"
-              aria-label="Filter by tag"
+          <>
+            <Select
+              value={tag ?? ALL_TAGS_VALUE}
+              onValueChange={(value) =>
+                router.push(
+                  buildHref({ tag: value === ALL_TAGS_VALUE ? null : value }),
+                )
+              }
             >
-              <SelectValue>
-                <span className="truncate">{selectedTagLabel}</span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_TAGS_VALUE}>All tags</SelectItem>
-              {tagOptions.map((option) => (
-                <SelectItem key={option.name} value={option.name}>
-                  {option.name}
-                  <span className="text-muted-foreground tabular-nums">
-                    {option.count}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                className="w-full data-[size=default]:h-9 sm:w-40"
+                aria-label="Filter by tag"
+              >
+                <SelectValue>
+                  <span className="truncate">{selectedTagLabel}</span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_TAGS_VALUE}>All tags</SelectItem>
+                {tagOptions.map((option) => (
+                  <SelectItem key={option.name} value={option.name}>
+                    {option.name}
+                    <span className="text-muted-foreground tabular-nums">
+                      {option.count}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {tag ? (
+              <span className="col-span-2 inline-flex min-h-9 items-center gap-1 rounded-lg border border-border bg-muted/40 px-2 py-1 text-sm sm:col-span-1 sm:w-fit">
+                <span className="max-w-[10rem] truncate">{tag}</span>
+                <Link
+                  href={buildHref({ tag: null })}
+                  className="relative inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  aria-label="Clear tag filter"
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </Link>
+              </span>
+            ) : null}
+          </>
         ) : null}
       </div>
 

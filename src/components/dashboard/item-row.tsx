@@ -17,9 +17,10 @@ import { useTypeColorPosition } from "@/components/user-preferences/user-prefere
 type ItemRowProps = {
   item: DashboardItem;
   compact?: boolean;
+  tagFilterBasePath?: string;
 };
 
-export function ItemRow({ item, compact = false }: ItemRowProps) {
+export function ItemRow({ item, compact = false, tagFilterBasePath }: ItemRowProps) {
   const { openItem } = useItemDrawer();
   const typeColorPosition = useTypeColorPosition();
   const typeColorBorder = getTypeColorBorderProps(
@@ -69,7 +70,11 @@ export function ItemRow({ item, compact = false }: ItemRowProps) {
             className="-mt-0.5 -mr-1.5"
           />
         </div>
-        <ItemCardMeta item={item} className="mt-1.5" />
+        <ItemCardMeta
+          item={item}
+          className="mt-1.5"
+          tagFilterBasePath={tagFilterBasePath}
+        />
         {!isImage && !compact ? (
           <ItemCardPreview item={item} className="mt-2" />
         ) : null}

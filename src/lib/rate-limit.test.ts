@@ -64,6 +64,30 @@ describe("rate-limit", () => {
     });
   });
 
+  describe("recordApiV1AuthFailure without Redis", () => {
+    it("fails open in all environments", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("TRUST_PROXY", "true");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { recordApiV1AuthFailure } = await loadRateLimit();
+
+      const result = await recordApiV1AuthFailure(
+        requestWithHeaders({ "x-forwarded-for": "203.0.113.4" }),
+      );
+
+      expect(result.success).toBe(true);
+      expect(warn).toHaveBeenCalled();
+    });
+
+    it("skips limiting when client IP is unknown", async () => {
+      const { recordApiV1AuthFailure } = await loadRateLimit();
+
+      const result = await recordApiV1AuthFailure(requestWithHeaders({}));
+
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe("checkAiRateLimit without Redis", () => {
     it("fails closed in production", async () => {
       vi.stubEnv("NODE_ENV", "production");

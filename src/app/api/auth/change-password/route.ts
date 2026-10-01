@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { revokeAllActiveApiKeysForUser } from "@/lib/db/api-keys";
 import { prisma } from "@/lib/prisma";
 import {
   checkChangePasswordRateLimit,
@@ -74,9 +75,13 @@ export async function POST(request: Request) {
 
   const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
 
-  await prisma.user.update({
-    where: { id: session.user.id },
-    data: { password: passwordHash, sessionVersion: { increment: 1 } },
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: session.user.id },
+      data: { password: passwordHash, sessionVersion: { increment: 1 } },
+    });
+
+    await revokeAllActiveApiKeysForUser(session.user.id, tx);
   });
 
   return NextResponse.json({ success: true, signOutRequired: true });
