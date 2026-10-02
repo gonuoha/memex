@@ -102,7 +102,7 @@ export default async function SharedItemPage({ params }: SharedItemPageProps) {
         <header className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">
-              {getItemTypeLabel(item.typeName)}
+              {getItemTypeLabel(item.typeName, { isSystem: true })}
             </Badge>
             {item.language ? (
               <Badge variant="secondary">{item.language}</Badge>

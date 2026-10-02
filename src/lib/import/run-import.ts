@@ -2,6 +2,12 @@ import type { Prisma } from "@/generated/prisma/client";
 import { takeUserAdvisoryLock } from "@/lib/db/advisory-lock";
 import { createCollection } from "@/lib/db/collections";
 import {
+  createCustomItemTypeWithTransaction,
+  CustomItemTypeLimitError,
+} from "@/lib/db/item-types";
+import { MAX_CUSTOM_ITEM_TYPES } from "@/lib/item-types/slug";
+import { isUniqueConstraintError } from "@/lib/db/prisma-errors";
+import {
   FreeTierLimitExceededError,
   runWithFreeTierCollectionGuard,
   runWithFreeTierItemGuard,
@@ -9,11 +15,14 @@ import {
 import { activeItemWhere } from "@/lib/db/item-filters";
 import { createItem, resolveTagNamesForUser } from "@/lib/db/items";
 import { prisma } from "@/lib/prisma";
+import { SYSTEM_ITEM_TYPE_ORDER } from "@/lib/item-type-styles";
 import {
   FREE_ITEM_LIMIT,
   isProOnlyItemType,
 } from "@/lib/subscription-limits";
+import { createItemTypeSchema } from "@/lib/validations/item-types";
 import {
+  exportCustomTypeSchema,
   importCollectionInputSchema,
   importItemInputSchema,
   isExportArrayCapExceeded,
@@ -27,6 +36,10 @@ import { buildImportDuplicateFingerprint } from "./duplicate-fingerprint";
 
 const IMPORT_CHUNK_SIZE = 150;
 const IMPORT_TX_TIMEOUT_MS = 30_000;
+
+const SYSTEM_TYPE_NAMES = new Set<string>(
+  SYSTEM_ITEM_TYPE_ORDER.map((name) => name.toLowerCase()),
+);
 
 export type ImportSummary = {
   created: number;
@@ -44,6 +57,10 @@ export type ImportRunResult =
   | { error: "invalid_format" }
   | { error: "array_caps_exceeded" };
 
+function isSystemTypeName(typeName: string): boolean {
+  return SYSTEM_TYPE_NAMES.has(typeName.toLowerCase());
+}
+
 async function resolveItemTypeMap(
   userId: string,
 ): Promise<Map<string, string>> {
@@ -51,16 +68,117 @@ async function resolveItemTypeMap(
     where: {
       OR: [{ isSystem: true }, { userId }],
     },
-    select: { id: true, name: true },
+    select: { id: true, name: true, isSystem: true },
+    orderBy: [{ isSystem: "desc" }, { name: "asc" }],
   });
 
   const map = new Map<string, string>();
 
   for (const type of types) {
-    map.set(type.name.toLowerCase(), type.id);
+    const key = type.name.toLowerCase();
+
+    if (type.isSystem || !map.has(key)) {
+      map.set(key, type.id);
+    }
   }
 
   return map;
+}
+
+async function ensureImportCustomTypes(
+  userId: string,
+  exportData: MemexExport,
+  typeIdByName: Map<string, string>,
+): Promise<number> {
+  if (!exportData.types?.length) {
+    return 0;
+  }
+
+  let skippedInvalidTypes = 0;
+  const pending: Array<{
+    name: string;
+    kind: "code" | "markdown" | "link";
+    icon: string;
+    color: string;
+  }> = [];
+
+  for (const raw of exportData.types) {
+    const exportParsed = exportCustomTypeSchema.safeParse(raw);
+
+    if (!exportParsed.success) {
+      skippedInvalidTypes += 1;
+      continue;
+    }
+
+    const createParsed = createItemTypeSchema.safeParse(exportParsed.data);
+
+    if (!createParsed.success) {
+      skippedInvalidTypes += 1;
+      continue;
+    }
+
+    const key = createParsed.data.name.toLowerCase();
+
+    if (typeIdByName.has(key)) {
+      continue;
+    }
+
+    pending.push(createParsed.data);
+  }
+
+  if (pending.length === 0) {
+    return skippedInvalidTypes;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await takeUserAdvisoryLock(tx, userId);
+
+    for (const input of pending) {
+      const key = input.name.toLowerCase();
+
+      if (typeIdByName.has(key)) {
+        continue;
+      }
+
+      const customCount = await tx.itemType.count({
+        where: { userId, isSystem: false },
+      });
+
+      if (customCount >= MAX_CUSTOM_ITEM_TYPES) {
+        break;
+      }
+
+      try {
+        const created = await createCustomItemTypeWithTransaction(
+          userId,
+          input,
+          tx,
+        );
+        typeIdByName.set(key, created.id);
+      } catch (error) {
+        if (error instanceof CustomItemTypeLimitError) {
+          break;
+        }
+
+        if (isUniqueConstraintError(error)) {
+          const existing = await tx.itemType.findFirst({
+            where: {
+              userId,
+              isSystem: false,
+              name: { equals: input.name, mode: "insensitive" },
+            },
+            select: { id: true },
+          });
+
+          if (existing) {
+            typeIdByName.set(key, existing.id);
+          }
+        }
+      }
+    }
+  });
+
+  return skippedInvalidTypes;
 }
 
 async function ensureCollections(
@@ -148,7 +266,7 @@ async function insertImportItem(
       title: validated.title,
       description: validated.description,
       content: validated.content,
-      url: validated.type === "link" ? validated.url ?? null : null,
+      url: validated.url ?? null,
       language: validated.language,
       fileUrl: null,
       fileName: null,
@@ -323,6 +441,15 @@ export async function runMemexImport(
   summary.skippedInvalidCollections = skippedInvalidCollections;
 
   const typeIdByName = await resolveItemTypeMap(userId);
+
+  if (isPro) {
+    summary.skippedInvalid += await ensureImportCustomTypes(
+      userId,
+      exportData,
+      typeIdByName,
+    );
+  }
+
   const duplicateFingerprints =
     await fetchActiveItemDuplicateFingerprints(userId);
 
@@ -330,6 +457,11 @@ export async function runMemexImport(
 
   for (const item of exportData.items) {
     if (isProOnlyItemType(item.type)) {
+      summary.skippedUnsupported += 1;
+      continue;
+    }
+
+    if (!isPro && !isSystemTypeName(item.type)) {
       summary.skippedUnsupported += 1;
       continue;
     }

@@ -162,7 +162,9 @@ export function TrashList({ items, page, totalPages }: TrashListProps) {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{item.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      {getItemTypeLabel(item.type.name)}
+                      {getItemTypeLabel(item.type.name, {
+                        isSystem: item.type.isSystem ?? true,
+                      })}
                     </p>
                   </div>
                 </div>

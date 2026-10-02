@@ -1,8 +1,11 @@
 import { cache } from "react";
 
 import { Prisma, type Prisma as PrismaTypes } from "@/generated/prisma/client";
-import { buildItemListPreview } from "@/lib/item-preview";
-import { parseItemTypeSlug } from "@/lib/item-type-slugs";
+import { buildItemListPreview, resolvePreviewKind } from "@/lib/item-preview";
+import { getTypeSlug } from "@/lib/item-type-slugs";
+import { normalizeItemTypeKind } from "@/lib/item-types/kinds";
+import { getUserItemTypes, resolveItemTypeBySlug } from "@/lib/item-types/resolve";
+import type { ItemTypeKind } from "@/lib/item-types/kinds";
 import type { ItemsListSort } from "@/lib/items-list-params";
 import { sortItemTypesBySystemOrder } from "@/lib/item-type-styles";
 import {
@@ -202,6 +205,9 @@ const itemDetailSelect = {
     select: {
       id: true,
       name: true,
+      kind: true,
+      slug: true,
+      isSystem: true,
       icon: true,
       color: true,
     },
@@ -249,6 +255,9 @@ const itemSelect = {
     select: {
       id: true,
       name: true,
+      kind: true,
+      slug: true,
+      isSystem: true,
       icon: true,
       color: true,
     },
@@ -281,12 +290,15 @@ type RawListItem = {
   tags: { tag: { name: string } }[];
 };
 
-const CONTENT_PREVIEW_TYPES = new Set([
-  "snippet",
-  "command",
-  "prompt",
-  "note",
-]);
+const CONTENT_PREVIEW_KINDS = new Set(["code", "markdown"]);
+
+function typeUsesContentPreview(type: CollectionItemType): boolean {
+  if (type.kind) {
+    return CONTENT_PREVIEW_KINDS.has(normalizeItemTypeKind(type.kind));
+  }
+
+  return false;
+}
 
 async function fetchContentExcerpts(
   userId: string,
@@ -314,7 +326,7 @@ async function mapListItems(
   items: RawListItem[],
 ): Promise<DashboardItem[]> {
   const contentIds = items
-    .filter((item) => CONTENT_PREVIEW_TYPES.has(item.type.name.toLowerCase()))
+    .filter((item) => typeUsesContentPreview(item.type))
     .map((item) => item.id);
   const excerpts = await fetchContentExcerpts(userId, contentIds);
 
@@ -399,9 +411,9 @@ function mapItem(
   item: RawListItem,
   contentExcerpt: string | null = null,
 ): DashboardItem {
-  const typeName = item.type.name;
+  const previewKind = resolvePreviewKind(item.type);
   const preview = buildItemListPreview({
-    typeName,
+    kind: previewKind,
     description: item.description,
     contentExcerpt,
     url: item.url,
@@ -866,25 +878,35 @@ export async function getRecentItems(
   return mapListItems(userId, items);
 }
 
-export async function getItemTypeBySlug(userId: string, slug: string) {
-  const typeName = parseItemTypeSlug(slug);
+export type ItemTypeBySlug = {
+  id: string;
+  name: string;
+  kind: ItemTypeKind;
+  slug: string;
+  isSystem: boolean;
+  icon: string | null;
+  color: string | null;
+};
 
-  if (!typeName) {
+export async function getItemTypeBySlug(
+  userId: string,
+  slug: string,
+): Promise<ItemTypeBySlug | null> {
+  const resolved = await resolveItemTypeBySlug(userId, slug);
+
+  if (!resolved) {
     return null;
   }
 
-  return prisma.itemType.findFirst({
-    where: {
-      name: { equals: typeName, mode: "insensitive" },
-      OR: [{ isSystem: true }, { userId }],
-    },
-    select: {
-      id: true,
-      name: true,
-      icon: true,
-      color: true,
-    },
-  });
+  return {
+    id: resolved.id,
+    name: resolved.name,
+    kind: resolved.kind,
+    slug: resolved.slug,
+    isSystem: resolved.isSystem,
+    icon: resolved.icon,
+    color: resolved.color,
+  };
 }
 
 export type { PaginatedResult } from "@/lib/pagination";
@@ -1080,6 +1102,9 @@ export async function getFileItemsByIds(
 export type SystemItemType = {
   id: string;
   name: string;
+  kind: string;
+  slug: string;
+  isSystem: boolean;
   icon: string | null;
   color: string | null;
 };
@@ -1101,19 +1126,25 @@ export async function getSystemItemTypes(): Promise<SystemItemType[]> {
     select: {
       id: true,
       name: true,
+      kind: true,
+      slug: true,
+      isSystem: true,
       icon: true,
       color: true,
     },
   });
 
-  return sortItemTypesBySystemOrder(itemTypes);
+  return sortItemTypesBySystemOrder(itemTypes).map((type) => ({
+    ...type,
+    slug: getTypeSlug(type.name),
+  }));
 }
 
 export async function getSidebarItemTypes(
   userId: string,
 ): Promise<SidebarItemType[]> {
   const [itemTypes, typeCounts] = await Promise.all([
-    getSystemItemTypes(),
+    getUserItemTypes(userId),
     prisma.item.groupBy({
       by: ["typeId"],
       where: activeItemWhere(userId),
@@ -1126,7 +1157,13 @@ export async function getSidebarItemTypes(
   );
 
   return itemTypes.map((type) => ({
-    ...type,
+    id: type.id,
+    name: type.name,
+    kind: type.kind,
+    slug: type.slug,
+    isSystem: type.isSystem,
+    icon: type.icon,
+    color: type.color,
     itemCount: countByTypeId.get(type.id) ?? 0,
   }));
 }

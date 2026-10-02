@@ -1,5 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { parseItemTypeSlug } from "@/lib/item-type-slugs";
+import { resolveItemTypeBySlug } from "@/lib/item-types/resolve";
 import { prisma } from "@/lib/prisma";
 import {
   API_V1_MAX_SEARCH_OFFSET,
@@ -28,19 +28,20 @@ export type ListApiV1ItemsResult =
   | { ok: true; page: ApiV1ItemsPage }
   | { ok: false; code: "invalid_cursor" };
 
-function buildStructuredFilters(
+async function buildStructuredFilters(
+  userId: string,
   query: ApiV1ListItemsQuery,
   tagId: string | null,
-): Prisma.ItemWhereInput[] {
+): Promise<Prisma.ItemWhereInput[]> {
   const filters: Prisma.ItemWhereInput[] = [];
 
   if (query.type) {
-    const typeName = parseItemTypeSlug(query.type);
+    const resolved = await resolveItemTypeBySlug(userId, query.type);
 
-    if (typeName) {
-      filters.push({
-        type: { name: { equals: typeName, mode: "insensitive" } },
-      });
+    if (resolved) {
+      filters.push({ typeId: resolved.id });
+    } else {
+      filters.push({ id: { in: [] } });
     }
   }
 
@@ -71,13 +72,13 @@ function buildStructuredFilters(
   return filters;
 }
 
-function buildKeysetWhere(
+async function buildKeysetWhere(
   userId: string,
   query: ApiV1ListItemsQuery,
   tagId: string | null,
   cursor: ApiV1KeysetCursor | null,
-): Prisma.ItemWhereInput {
-  const structured = buildStructuredFilters(query, tagId);
+): Promise<Prisma.ItemWhereInput> {
+  const structured = await buildStructuredFilters(userId, query, tagId);
   const base = activeItemWhere(
     userId,
     structured.length > 0 ? { AND: structured } : undefined,
@@ -113,7 +114,7 @@ async function listKeysetPage(
   filterHash: string,
 ): Promise<ApiV1ItemsPage> {
   const rows = await prisma.item.findMany({
-    where: buildKeysetWhere(userId, query, tagId, cursor),
+    where: await buildKeysetWhere(userId, query, tagId, cursor),
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: query.limit + 1,
     select: itemDetailSelectFields,
@@ -150,7 +151,7 @@ async function listSearchPage(
     userId,
     query.q ?? "",
     {
-      typeSlug: query.type ? parseItemTypeSlug(query.type) : null,
+      typeSlug: query.type ?? null,
       tagId,
       collectionId: query.collection ?? null,
     },

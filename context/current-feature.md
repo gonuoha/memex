@@ -2,7 +2,7 @@
 
 ## Status
 
-In Progress
+Completed
 
 ## Goals
 
@@ -127,3 +127,4 @@ In Progress
 - 2026-09-30: Completed **Phase 2 — Architecture** — shared `(app)` route group with server-side auth guard, item trash with restore/permanent delete/30-day cron purge, Postgres full-text + trigram search behind `/api/search` with on-demand command palette, presigned direct-to-R2 uploads with server-side size/quota/magic-byte verification
 - 2026-09-30: Completed **Phase 3 — Design Refresh** — content previews on item cards, filterable/sortable item lists with grid/list toggle and URL params, overflow menus with overlay-button cards, keyboard shortcuts (`?` help dialog, `g`-sequences, `n` new), New split button, dashboard greeting/quick capture/stats strip/onboarding checklist, sidebar polish, link favicons preference, app icon and metadata, privacy and terms pages
 - 2026-10-02: Completed **Phase 4a — Tags, API, Sharing, Data Portability** — tag management (`/tags`, per-tag pages, rename/merge across case variants, delete, scoped orphan cleanup, `?tag=` list filter, `g l` shortcut); Pro personal API keys (hashed, one-time reveal, revoked on password change/reset) and REST API v1 (`/api/v1/items|collections|tags`, keyset/FTS cursors, partial PATCH, per-key and failed-auth rate limits, `/docs/api`); public read-only share links (`/s/[token]`, expiry, view counts, revoke on trash, noindex/no-referrer); JSON and Markdown ZIP export, JSON import with validation, dedupe, free-tier limits and chunked transactions
+- 2026-10-02: Completed **Phase 4b — Custom Item Types (Pro)** — `ItemType.kind` (code/markdown/link/file/image) and per-user `slug`; central type registry and kind-based behaviour across editors, previews, sharing, AI, search, API v1 and export/import; Settings card to create/edit/delete custom types (icon, color, kind, move-on-delete), 20-type cap under advisory lock, Pro gating for new types and new items in custom types (downgraded users keep existing data)

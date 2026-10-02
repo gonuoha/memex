@@ -1,5 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { buildApiV1TagIdFilterSql } from "@/lib/db/api-v1-tag-filter";
+import { parseItemTypeSlug } from "@/lib/item-type-slugs";
+import { resolveItemTypeBySlug } from "@/lib/item-types/resolve";
 import { prisma } from "@/lib/prisma";
 import {
   buildContainsLikePattern,
@@ -13,6 +15,7 @@ export type SearchItemType = {
   name: string;
   icon: string | null;
   color: string | null;
+  isSystem: boolean;
 };
 
 export type SearchItemTag = {
@@ -49,6 +52,7 @@ type RawSearchRow = {
   type_name: string;
   type_icon: string | null;
   type_color: string | null;
+  type_is_system: boolean;
 };
 
 type ItemSearchSql = {
@@ -112,10 +116,25 @@ function buildTextSearchSql(text: string): ItemSearchSql {
   };
 }
 
-function buildItemFilterSql(typeSlug: string | null, tag: string | null): Prisma.Sql {
-  const typeFilter = typeSlug
-    ? Prisma.sql`AND lower(it."name") = ANY(${getTypeNameCandidates(typeSlug)}::text[])`
-    : Prisma.empty;
+async function buildItemFilterSql(
+  userId: string,
+  typeSlug: string | null,
+  tag: string | null,
+): Promise<Prisma.Sql> {
+  let typeFilter = Prisma.empty;
+
+  if (typeSlug) {
+    const resolved = await resolveItemTypeBySlug(userId, typeSlug);
+
+    if (resolved) {
+      typeFilter = Prisma.sql`AND it."id" = ${resolved.id}`;
+    } else if (parseItemTypeSlug(typeSlug) !== null) {
+      typeFilter = Prisma.sql`AND lower(it."name") = ANY(${getTypeNameCandidates(typeSlug)}::text[])`;
+    } else {
+      typeFilter = Prisma.sql`AND 1 = 0`;
+    }
+  }
+
   const tagFilter = tag
     ? Prisma.sql`AND EXISTS (
         SELECT 1
@@ -167,6 +186,11 @@ export async function searchItems(
 ): Promise<SearchItemResult[]> {
   const parsed = parseSearchQuery(query);
   const hasFilters = Boolean(parsed.typeSlug || parsed.tag);
+  const typeFilterSql = await buildItemFilterSql(
+    userId,
+    parsed.typeSlug,
+    parsed.tag,
+  );
   const search = parsed.text
     ? buildTextSearchSql(parsed.text)
     : buildRecentItemsSql();
@@ -183,12 +207,13 @@ export async function searchItems(
       it."id" AS type_id,
       it."name" AS type_name,
       it."icon" AS type_icon,
-      it."color" AS type_color
+      it."color" AS type_color,
+      it."isSystem" AS type_is_system
     FROM "Item" i
     INNER JOIN "ItemType" it ON it."id" = i."typeId"
     WHERE i."userId" = ${userId}
       AND i."deletedAt" IS NULL
-      ${buildItemFilterSql(parsed.typeSlug, parsed.tag)}
+      ${typeFilterSql}
       ${search.match}
     ORDER BY ${search.orderBy}
     LIMIT ${limit}
@@ -205,6 +230,7 @@ export async function searchItems(
       name: row.type_name,
       icon: row.type_icon,
       color: row.type_color,
+      isSystem: row.type_is_system,
     },
     tags: tagMap.get(row.id) ?? [],
   }));
@@ -307,6 +333,27 @@ function buildApiV1CollectionFilterSql(collectionId: string | null): Prisma.Sql 
   )`;
 }
 
+async function buildApiV1TypeFilterSql(
+  userId: string,
+  typeSlug: string | null,
+): Promise<Prisma.Sql> {
+  if (!typeSlug) {
+    return Prisma.empty;
+  }
+
+  const resolved = await resolveItemTypeBySlug(userId, typeSlug);
+
+  if (resolved) {
+    return Prisma.sql`AND it."id" = ${resolved.id}`;
+  }
+
+  if (parseItemTypeSlug(typeSlug) !== null) {
+    return Prisma.sql`AND lower(it."name") = ANY(${getTypeNameCandidates(typeSlug)}::text[])`;
+  }
+
+  return Prisma.sql`AND 1 = 0`;
+}
+
 export async function searchApiV1ItemIds(
   userId: string,
   q: string,
@@ -315,9 +362,7 @@ export async function searchApiV1ItemIds(
   offset: number,
 ): Promise<string[]> {
   const search = buildTextSearchSql(q);
-  const typeFilter = filters.typeSlug
-    ? Prisma.sql`AND lower(it."name") = ANY(${getTypeNameCandidates(filters.typeSlug)}::text[])`
-    : Prisma.empty;
+  const typeFilter = await buildApiV1TypeFilterSql(userId, filters.typeSlug);
 
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT i."id" AS id

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { parseItemTypeSlug } from "@/lib/item-type-slugs";
+import { isValidItemTypeSlug } from "@/lib/item-types/slug";
 import { createItemSchema, updateItemSchema } from "@/lib/validations/items";
 
 const DEFAULT_LIST_LIMIT = 25;
@@ -25,9 +26,20 @@ const listTypeSchema = z
   .trim()
   .min(1)
   .optional()
-  .refine((value) => !value || parseItemTypeSlug(value) !== null, {
-    message: "Unknown item type",
-  });
+  .refine(
+    (value) => {
+      if (!value) {
+        return true;
+      }
+
+      if (parseItemTypeSlug(value) !== null) {
+        return true;
+      }
+
+      return isValidItemTypeSlug(value);
+    },
+    { message: "Unknown item type" },
+  );
 
 export const apiV1ListItemsQuerySchema = z.object({
   type: listTypeSchema,
@@ -46,17 +58,7 @@ export const apiV1ListItemsQuerySchema = z.object({
 
 export type ApiV1ListItemsQuery = z.infer<typeof apiV1ListItemsQuerySchema>;
 
-export const apiV1CreateItemSchema = createItemSchema
-  .strict()
-  .superRefine((data, ctx) => {
-    if (data.type === "file" || data.type === "image") {
-      ctx.addIssue({
-        code: "custom",
-        message: "File and image items are not supported by the API",
-        path: ["type"],
-      });
-    }
-  });
+export const apiV1CreateItemSchema = createItemSchema.strict();
 
 export const apiV1UpdateItemSchema = updateItemSchema
   .partial()

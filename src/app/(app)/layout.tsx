@@ -19,6 +19,7 @@ export default async function AppLayout({
     editorPreferences,
     userPreferences,
     usage,
+    itemTypes,
   } = await getDashboardLayoutData();
 
   return (
@@ -30,6 +31,7 @@ export default async function AppLayout({
       userPreferences={userPreferences}
       itemCount={usage.itemCount}
       collectionCount={usage.collectionCount}
+      itemTypes={itemTypes}
     >
       {children}
     </DashboardShell>

@@ -152,6 +152,8 @@ model Item {
 model ItemType {
   id       String  @id @default(cuid())
   name     String
+  kind     String  @default("markdown")
+  slug     String?
   icon     String?
   color    String?
   isSystem Boolean @default(false)
@@ -161,7 +163,10 @@ model ItemType {
 
   items Item[]
 
+  createdAt DateTime @default(now())
+
   @@unique([userId, name])
+  @@unique([userId, slug])
   @@index([userId])
 }
 

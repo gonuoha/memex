@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { activeItemWhere } from "@/lib/db/item-filters";
-import { getSystemItemTypes, getUserItemStats } from "@/lib/db/items";
+import { getUserItemTypes } from "@/lib/item-types/resolve";
+import { getUserItemStats } from "@/lib/db/items";
 import { getUserStorageUsageBytes } from "@/lib/db/user";
 import { PRO_STORAGE_QUOTA_BYTES } from "@/lib/subscription-limits";
 import { prisma } from "@/lib/prisma";
@@ -13,6 +14,7 @@ export type ProfileItemTypeCount = {
   icon: string | null;
   color: string | null;
   count: number;
+  isSystem: boolean;
 };
 
 export type ProfileData = {
@@ -58,7 +60,7 @@ export const getProfileData = cache(async (): Promise<ProfileData> => {
     redirect("/api/auth/signout?callbackUrl=/sign-in");
   }
 
-  const [stats, storageUsedBytes, typeCounts, systemTypes] = await Promise.all([
+  const [stats, storageUsedBytes, typeCounts, resolvedTypes] = await Promise.all([
     getUserItemStats(user.id),
     user.isPro ? getUserStorageUsageBytes(user.id) : Promise.resolve(0),
     prisma.item.groupBy({
@@ -66,18 +68,19 @@ export const getProfileData = cache(async (): Promise<ProfileData> => {
       where: activeItemWhere(user.id),
       _count: { typeId: true },
     }),
-    getSystemItemTypes(),
+    getUserItemTypes(user.id),
   ]);
 
   const countByTypeId = new Map(
     typeCounts.map((row) => [row.typeId, row._count.typeId]),
   );
 
-  const itemTypeCounts = systemTypes.map((type) => ({
+  const itemTypeCounts = resolvedTypes.map((type) => ({
     name: type.name,
     icon: type.icon,
     color: type.color,
     count: countByTypeId.get(type.id) ?? 0,
+    isSystem: type.isSystem,
   }));
 
   return {

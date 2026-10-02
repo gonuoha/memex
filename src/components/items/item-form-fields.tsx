@@ -21,6 +21,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  getItemTypeBehaviour,
+  type ItemTypeKind,
+} from "@/lib/item-types/kinds";
+import {
   CONTENT_TYPE_NAMES,
   LANGUAGE_TYPE_NAMES,
   URL_TYPE_NAMES,
@@ -40,6 +44,7 @@ export type ItemFormFieldsState = {
 type ItemFormFieldsProps = {
   idPrefix: string;
   typeName: string;
+  typeKind?: ItemTypeKind;
   formState: ItemFormFieldsState;
   onChange: (patch: Partial<ItemFormFieldsState>) => void;
   collections: SelectableCollection[];
@@ -64,6 +69,7 @@ type ItemFormFieldsProps = {
 export function ItemFormFields({
   idPrefix,
   typeName,
+  typeKind,
   formState,
   onChange,
   collections,
@@ -84,11 +90,23 @@ export function ItemFormFields({
   onAcceptSuggestedSummary,
   onRejectSuggestedSummary,
 }: ItemFormFieldsProps) {
-  const showContent = CONTENT_TYPE_NAMES.has(typeName);
-  const showLanguage = LANGUAGE_TYPE_NAMES.has(typeName);
-  const showUrl = URL_TYPE_NAMES.has(typeName);
-  const useCodeEditor = CODE_EDITOR_TYPE_NAMES.has(typeName);
-  const useMarkdownEditor = MARKDOWN_EDITOR_TYPE_NAMES.has(typeName);
+  const behaviour = typeKind ? getItemTypeBehaviour(typeKind) : null;
+  const normalizedName = typeName.toLowerCase();
+  const showContent = behaviour
+    ? behaviour.usesCodeEditor || behaviour.usesMarkdownEditor
+    : CONTENT_TYPE_NAMES.has(normalizedName);
+  const showLanguage = behaviour
+    ? behaviour.usesLanguageField
+    : LANGUAGE_TYPE_NAMES.has(normalizedName);
+  const showUrl = behaviour
+    ? behaviour.usesUrlField
+    : URL_TYPE_NAMES.has(normalizedName);
+  const useCodeEditor = behaviour
+    ? behaviour.usesCodeEditor
+    : CODE_EDITOR_TYPE_NAMES.has(normalizedName);
+  const useMarkdownEditor = behaviour
+    ? behaviour.usesMarkdownEditor
+    : MARKDOWN_EDITOR_TYPE_NAMES.has(normalizedName);
 
   return (
     <>

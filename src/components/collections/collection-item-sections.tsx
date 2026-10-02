@@ -64,7 +64,10 @@ export function CollectionItemSections({
       {groups.map((group) => (
         <section key={group.type.id}>
           <SectionHeading>
-            {getItemTypeLabel(group.type.name, { plural: true })}
+            {getItemTypeLabel(group.type.name, {
+              plural: true,
+              isSystem: group.type.isSystem ?? true,
+            })}
           </SectionHeading>
           {renderTypeSection(group, fileItems, view)}
         </section>

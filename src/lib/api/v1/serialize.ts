@@ -1,5 +1,4 @@
 import type { ItemDetail } from "@/lib/db/items";
-import { parseItemTypeSlug } from "@/lib/item-type-slugs";
 
 export type ApiV1Item = {
   id: string;
@@ -27,14 +26,22 @@ export type ApiV1Tag = {
   name: string;
 };
 
-function normalizeItemType(typeName: string): string {
-  return parseItemTypeSlug(typeName) ?? typeName.toLowerCase();
+function serializeItemTypeSlug(type: ItemDetail["type"]): string {
+  if (type.isSystem) {
+    return type.name.toLowerCase();
+  }
+
+  if (type.slug) {
+    return type.slug;
+  }
+
+  return type.name.toLowerCase();
 }
 
 export function serializeApiV1Item(item: ItemDetail): ApiV1Item {
   return {
     id: item.id,
-    type: normalizeItemType(item.type.name),
+    type: serializeItemTypeSlug(item.type),
     title: item.title,
     description: item.description,
     content: item.content,

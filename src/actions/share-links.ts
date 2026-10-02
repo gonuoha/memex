@@ -12,7 +12,11 @@ import {
 } from "@/lib/db/share-links";
 import { getUserIsPro } from "@/lib/db/user";
 import { checkShareLinkCreateRateLimit } from "@/lib/rate-limit-user-action";
-import { isShareableItemType } from "@/lib/share-links/constants";
+import { isShareableItemTypeKind } from "@/lib/share-links/constants";
+import {
+  getSystemKindForName,
+  normalizeItemTypeKind,
+} from "@/lib/item-types/kinds";
 import {
   createShareLinkSchema,
   getShareLinkForItemSchema,
@@ -58,13 +62,15 @@ async function assertShareableItem(
     return { success: false, error: "Item not found" };
   }
 
-  const typeName = item.type.name.toLowerCase();
+  const shareKind = item.type.isSystem === false
+    ? normalizeItemTypeKind(item.type.kind ?? "markdown")
+    : getSystemKindForName(item.type.name);
 
-  if (!isShareableItemType(typeName)) {
+  if (!isShareableItemTypeKind(shareKind)) {
     return { success: false, error: "This item type cannot be shared" };
   }
 
-  return { success: true, data: { typeName } };
+  return { success: true, data: { typeName: item.type.name } };
 }
 
 export async function createShareLink(

@@ -17,7 +17,7 @@ const item: ItemDetail = {
   fileSize: null,
   isFavorite: true,
   isPinned: false,
-  type: { id: "t1", name: "Snippet", icon: null, color: null },
+  type: { id: "t1", name: "Snippet", kind: "code", slug: null, isSystem: true, icon: null, color: null },
   tags: ["api"],
   collections: [{ id: "c1", name: "Work" }],
   createdAt: new Date("2026-01-01T00:00:00.000Z"),

@@ -9,6 +9,7 @@ import {
   runWithFreeTierItemGuard,
 } from "@/lib/db/free-tier-limits";
 import { getUserIsPro } from "@/lib/db/user";
+import { getItemTypeBehaviour } from "@/lib/item-types/kinds";
 import { itemLimitErrorMessage } from "@/lib/subscription-limits";
 import type { CreateItemInput } from "@/lib/validations/items";
 
@@ -16,7 +17,8 @@ export type CreateTextItemErrorKind =
   | "unsupported_type"
   | "invalid_type"
   | "invalid_collections"
-  | "item_limit";
+  | "item_limit"
+  | "pro_required";
 
 export type CreateTextItemResult =
   | { success: true; data: ItemDetail }
@@ -38,22 +40,18 @@ export function createTextItemErrorMessage(
       return "Invalid collection selection";
     case "item_limit":
       return itemLimitErrorMessage();
+    case "pro_required":
+      return "Creating items in custom types requires a Pro subscription";
   }
 }
 
 export async function executeCreateTextItem(
   userId: string,
   parsed: CreateItemInput,
+  resolvedType?: Awaited<ReturnType<typeof getItemTypeBySlug>>,
 ): Promise<CreateTextItemResult> {
-  if (parsed.type === "file" || parsed.type === "image") {
-    return {
-      success: false,
-      kind: "unsupported_type",
-      message: createTextItemErrorMessage("unsupported_type"),
-    };
-  }
-
-  const itemType = await getItemTypeBySlug(userId, parsed.type);
+  const itemType =
+    resolvedType ?? (await getItemTypeBySlug(userId, parsed.type));
 
   if (!itemType) {
     return {
@@ -63,7 +61,33 @@ export async function executeCreateTextItem(
     };
   }
 
+  const behaviour = getItemTypeBehaviour(itemType.kind);
+
+  if (behaviour.usesFileUpload) {
+    return {
+      success: false,
+      kind: "unsupported_type",
+      message: createTextItemErrorMessage("unsupported_type"),
+    };
+  }
+
   const isPro = await getUserIsPro(userId);
+
+  if (itemType.isSystem === false && !isPro) {
+    return {
+      success: false,
+      kind: "pro_required",
+      message: createTextItemErrorMessage("pro_required"),
+    };
+  }
+
+  if (behaviour.usesUrlField && !parsed.url) {
+    return {
+      success: false,
+      kind: "invalid_type",
+      message: "URL is required",
+    };
+  }
 
   const hasValidCollections = await validateUserCollectionIds(
     userId,

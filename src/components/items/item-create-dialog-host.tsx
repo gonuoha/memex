@@ -5,13 +5,13 @@ import { cloneElement, isValidElement, useState } from "react";
 import type { SelectableCollection } from "@/components/collections/collection-multi-select";
 import { ItemCreateDialog } from "@/components/items/item-create-dialog";
 import { setItemCreatePrefill } from "@/components/items/item-create-prefill";
-import type { CreatableItemType } from "@/lib/validations/items";
+import type { CreateItemTypeSlug, CreatableItemType } from "@/lib/validations/items";
 
 type ItemCreateDialogHostProps = {
   isPro: boolean;
   itemCount: number;
   collections: SelectableCollection[];
-  defaultType?: CreatableItemType;
+  defaultType?: CreateItemTypeSlug | CreatableItemType;
   prefillOnOpen?: {
     type?: CreatableItemType;
     title?: string;

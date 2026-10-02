@@ -46,7 +46,14 @@ const mockRateLimit = vi.mocked(checkShareLinkCreateRateLimit);
 
 const sampleItem = {
   id: "item-1",
-  type: { name: "snippet", id: "t1", icon: null, color: null },
+  type: {
+    name: "snippet",
+    id: "t1",
+    icon: null,
+    color: null,
+    isSystem: true,
+    kind: "code",
+  },
   title: "T",
   description: null,
   content: "x",

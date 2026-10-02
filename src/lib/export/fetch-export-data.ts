@@ -24,7 +24,7 @@ function mapRowToExportItem(
 ): MemexExportItem {
   const typeName = item.type.name.toLowerCase();
   const base = {
-    type: typeName as MemexExportItem["type"],
+    type: typeName,
     title: item.title,
     description: item.description,
     content: item.content,
@@ -103,7 +103,7 @@ async function fetchExportItems(userId: string): Promise<MemexExportItem[]> {
 }
 
 export async function fetchMemexExportData(userId: string): Promise<MemexExport> {
-  const [items, collections] = await Promise.all([
+  const [items, collections, customTypes] = await Promise.all([
     fetchExportItems(userId),
     prisma.collection.findMany({
       where: { userId },
@@ -113,6 +113,11 @@ export async function fetchMemexExportData(userId: string): Promise<MemexExport>
         description: true,
         isFavorite: true,
       },
+    }),
+    prisma.itemType.findMany({
+      where: { userId, isSystem: false },
+      select: { name: true, kind: true, icon: true, color: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -125,5 +130,15 @@ export async function fetchMemexExportData(userId: string): Promise<MemexExport>
       description: collection.description,
       isFavorite: collection.isFavorite,
     })),
+    ...(customTypes.length > 0
+      ? {
+          types: customTypes.map((type) => ({
+            name: type.name,
+            kind: type.kind as "code" | "markdown" | "link",
+            icon: type.icon ?? "Code",
+            color: type.color ?? "#6366F1",
+          })),
+        }
+      : {}),
   };
 }

@@ -19,17 +19,15 @@ import {
   type PaginatedResult,
 } from "@/lib/db/items";
 import { getItemTypeLabel } from "@/lib/item-type-styles";
-import { getCanonicalItemTypeSlug, getTypeSlug } from "@/lib/item-type-slugs";
 import {
   buildItemsListQueryString,
   hasExplicitItemsListView,
   parseItemsListSearchParams,
   type ItemsListSearchParams,
 } from "@/lib/items-list-params";
+import { getItemTypeBehaviour } from "@/lib/item-types/kinds";
 import { getCurrentUser } from "@/lib/db/user";
 import { getUserPreferences } from "@/lib/db/settings";
-import { isProOnlyItemType } from "@/lib/subscription-limits";
-import { creatableItemTypeSchema } from "@/lib/validations/items";
 
 type ItemsByTypePageProps = {
   params: Promise<{ type: string }>;
@@ -56,32 +54,31 @@ export default async function ItemsByTypePage({
   const rawSearchParams = await searchParams;
   const parsed = parseItemsListSearchParams(rawSearchParams);
 
-  const canonicalSlug = getCanonicalItemTypeSlug(typeSlug);
-  if (!canonicalSlug) {
-    notFound();
-  }
-
-  if (canonicalSlug !== typeSlug) {
-    const query = buildItemsListQueryString({
-      ...parsed,
-      view: hasExplicitItemsListView(rawSearchParams) ? parsed.view : undefined,
-    });
-    permanentRedirect(`/items/${canonicalSlug}${query}`);
-  }
-
   const user = await getCurrentUser();
-  const [itemType, userPreferences, collections, usage] = await Promise.all([
-    getItemTypeBySlug(user.id, typeSlug),
-    getUserPreferences(user.id),
-    getSelectableCollections(user.id),
-    getUserItemStats(user.id),
-  ]);
+  const itemType = await getItemTypeBySlug(user.id, typeSlug);
 
   if (!itemType) {
     notFound();
   }
 
-  if (isProOnlyItemType(itemType.name) && !user.isPro) {
+  if (typeSlug !== itemType.slug) {
+    const query = buildItemsListQueryString({
+      ...parsed,
+      view: hasExplicitItemsListView(rawSearchParams) ? parsed.view : undefined,
+    });
+    permanentRedirect(`/items/${itemType.slug}${query}`);
+  }
+
+  const [userPreferences, collections, usage] = await Promise.all([
+    getUserPreferences(user.id),
+    getSelectableCollections(user.id),
+    getUserItemStats(user.id),
+  ]);
+
+  if (
+    (itemType.kind === "file" || itemType.kind === "image") &&
+    !user.isPro
+  ) {
     redirect("/upgrade");
   }
 
@@ -90,8 +87,9 @@ export default async function ItemsByTypePage({
     ? parsed.view
     : userPreferences.itemsView;
   const listQuery = { sort, tag, favoritesOnly };
-  const basePath = `/items/${getTypeSlug(itemType.name)}`;
-  const isFileType = itemType.name.toLowerCase() === "file";
+  const basePath = `/items/${itemType.slug}`;
+  const typeBehaviour = getItemTypeBehaviour(itemType.kind);
+  const isFileType = typeBehaviour.isGalleryView && itemType.kind === "file";
 
   const data: ListData = isFileType
     ? {
@@ -114,9 +112,7 @@ export default async function ItemsByTypePage({
       }));
 
   const { result } = data;
-  const creatableType = creatableItemTypeSchema.safeParse(
-    itemType.name.toLowerCase(),
-  );
+  const canCreateHere = itemType.isSystem || user.isPro;
   const hasFilters = Boolean(tag || favoritesOnly);
   const getHref = (patch: { page?: number; clearFilters?: boolean }) =>
     `${basePath}${buildItemsListQueryString({
@@ -131,7 +127,11 @@ export default async function ItemsByTypePage({
     <PageContainer wide className="gap-0">
       <PageHeader
         className="mb-6"
-        title={getItemTypeLabel(itemType.name, { plural: true })}
+        title={
+          itemType.isSystem
+            ? getItemTypeLabel(itemType.name, { plural: true, isSystem: true })
+            : itemType.name
+        }
         description={
           result.totalCount === 1 ? "1 item" : `${result.totalCount} items`
         }
@@ -152,11 +152,12 @@ export default async function ItemsByTypePage({
       ) : null}
 
       {result.totalCount === 0 && !hasFilters ? (
-        creatableType.success ? (
+        canCreateHere ? (
           <ItemTypeEmptyState
             typeName={itemType.name}
-            creatableType={creatableType.data}
+            creatableType={itemType.slug}
             typeIcon={itemType.icon}
+            isSystem={itemType.isSystem}
             isPro={user.isPro}
             itemCount={usage.itemCount}
             collections={collections}

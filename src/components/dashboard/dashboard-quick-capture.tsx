@@ -141,12 +141,12 @@ export function DashboardQuickCapture({
             className="flex-1 data-[size=default]:h-9 sm:w-32 sm:flex-none"
             aria-label="Capture type"
           >
-            <SelectValue>{getItemTypeLabel(type)}</SelectValue>
+            <SelectValue>{getItemTypeLabel(type, { isSystem: true })}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {QUICK_TYPES.map((entry) => (
               <SelectItem key={entry} value={entry}>
-                {getItemTypeLabel(entry)}
+                {getItemTypeLabel(entry, { isSystem: true })}
               </SelectItem>
             ))}
           </SelectContent>

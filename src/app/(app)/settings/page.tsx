@@ -9,17 +9,22 @@ import { AccountActionsCard } from "@/components/settings/account-actions-card";
 import { BillingCard } from "@/components/settings/billing-card";
 import { UserPreferencesCard } from "@/components/settings/user-preferences-card";
 import { ApiKeysCard } from "@/components/settings/api-keys-card";
+import { ItemTypesCard } from "@/components/settings/item-types-card";
 import { EditorPreferencesCard } from "@/components/settings/editor-preferences-card";
 import { DataCard } from "@/components/settings/data-card";
 import { SharedLinksCard } from "@/components/settings/shared-links-card";
 import { listApiKeysForUser } from "@/lib/db/api-keys";
+import { listItemTypesForUser } from "@/lib/db/item-types";
 import { listActiveShareLinksForUser } from "@/lib/db/share-links";
 import { getSettingsData } from "@/lib/db/settings";
 
 export default async function SettingsPage() {
   const { user, usage, userPreferences } = await getSettingsData();
-  const apiKeys = await listApiKeysForUser(user.id);
-  const shareLinks = await listActiveShareLinksForUser(user.id);
+  const [apiKeys, itemTypes, shareLinks] = await Promise.all([
+    listApiKeysForUser(user.id),
+    listItemTypesForUser(user.id),
+    listActiveShareLinksForUser(user.id),
+  ]);
 
   return (
     <PageContainer>
@@ -32,6 +37,7 @@ export default async function SettingsPage() {
         <UserPreferencesCard initialPreferences={userPreferences} />
         <EditorPreferencesCard />
         <DataCard />
+        <ItemTypesCard isPro={user.isPro} initialTypes={itemTypes} />
         <SharedLinksCard links={shareLinks} />
         <ApiKeysCard isPro={user.isPro} initialKeys={apiKeys} />
         <Suspense fallback={null}>

@@ -34,7 +34,7 @@ describe("getPublicSharedItemByToken", () => {
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
-        type: { name: "snippet" },
+        type: { name: "snippet", isSystem: true, kind: "code" },
         tags: [],
       },
     } as never);
@@ -56,7 +56,7 @@ describe("getPublicSharedItemByToken", () => {
         deletedAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),
-        type: { name: "snippet" },
+        type: { name: "snippet", isSystem: true, kind: "code" },
         tags: [],
       },
     } as never);
@@ -78,7 +78,7 @@ describe("getPublicSharedItemByToken", () => {
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
-        type: { name: "file" },
+        type: { name: "file", isSystem: true, kind: "file" },
         tags: [],
       },
     } as never);
@@ -100,7 +100,7 @@ describe("getPublicSharedItemByToken", () => {
         deletedAt: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
         updatedAt: new Date("2026-01-02T00:00:00.000Z"),
-        type: { name: "snippet" },
+        type: { name: "snippet", isSystem: true, kind: "code" },
         tags: [{ tag: { name: "tag1" } }],
       },
     } as never);

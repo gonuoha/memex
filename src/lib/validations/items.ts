@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { parseItemTypeSlug } from "@/lib/item-type-slugs";
 import { tagNameSchema } from "@/lib/validations/tags";
 
 export function emptyToNull(value: unknown) {
@@ -73,6 +72,14 @@ export const creatableItemTypeSchema = z.enum([
   "image",
 ]);
 
+export const createItemTypeSlugSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40);
+
+export type CreateItemTypeSlug = z.infer<typeof createItemTypeSlugSchema>;
+
 export const updateItemSchema = z.object({
   title: titleSchema,
   description: descriptionSchema,
@@ -85,7 +92,7 @@ export const updateItemSchema = z.object({
 
 export const createItemSchema = z
   .object({
-    type: creatableItemTypeSchema,
+    type: createItemTypeSlugSchema,
     title: titleSchema,
     description: descriptionSchema,
     content: contentSchema,
@@ -98,7 +105,13 @@ export const createItemSchema = z
     collectionIds: collectionIdListSchema,
   })
   .superRefine((data, ctx) => {
-    if (data.type === "link" && !data.url) {
+    const systemType = creatableItemTypeSchema.safeParse(data.type);
+
+    if (!systemType.success) {
+      return;
+    }
+
+    if (systemType.data === "link" && !data.url) {
       ctx.addIssue({
         code: "custom",
         message: "URL is required",
@@ -107,7 +120,7 @@ export const createItemSchema = z
     }
 
     if (
-      (data.type === "file" || data.type === "image") &&
+      (systemType.data === "file" || systemType.data === "image") &&
       (!data.fileUrl || !data.fileName || !data.fileSize)
     ) {
       ctx.addIssue({
@@ -123,32 +136,33 @@ export type CreateItemInput = z.infer<typeof createItemSchema>;
 
 export function parseCreatableItemTypeFromPathname(
   pathname: string,
-): CreatableItemType | undefined {
+): CreateItemTypeSlug | undefined {
   const match = pathname.match(/^\/items\/([^/]+)$/);
   if (!match) {
     return undefined;
   }
 
-  const typeName = parseItemTypeSlug(match[1]);
-  if (!typeName) {
-    return undefined;
-  }
-
-  const parsed = creatableItemTypeSchema.safeParse(typeName);
-  return parsed.success ? parsed.data : undefined;
+  return match[1].toLowerCase();
 }
 
 export function resolveDefaultCreateType(
-  defaultType: CreatableItemType | undefined,
+  defaultType: CreateItemTypeSlug | CreatableItemType | undefined,
   isPro: boolean,
-): CreatableItemType {
+): CreateItemTypeSlug {
   if (!defaultType) {
     return "snippet";
   }
 
-  if ((defaultType === "file" || defaultType === "image") && !isPro) {
+  const normalized = defaultType.toLowerCase();
+  const systemType = creatableItemTypeSchema.safeParse(normalized);
+
+  if (
+    systemType.success &&
+    (systemType.data === "file" || systemType.data === "image") &&
+    !isPro
+  ) {
     return "snippet";
   }
 
-  return defaultType;
+  return normalized;
 }

@@ -234,7 +234,12 @@ function FavoriteItemRow({ item }: FavoriteItemRowProps) {
       </div>
 
       <div className="shrink-0">
-        <TypeBadge label={getItemTypeLabel(item.type.name)} color={item.type.color} />
+        <TypeBadge
+          label={getItemTypeLabel(item.type.name, {
+            isSystem: item.type.isSystem ?? true,
+          })}
+          color={item.type.color}
+        />
       </div>
 
       <time

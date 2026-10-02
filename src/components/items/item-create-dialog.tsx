@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useEffect, useRef, useState, useTransition } from "react";
+import { createElement, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -8,6 +8,7 @@ import { createItem } from "@/actions/items";
 import {
   type SelectableCollection,
 } from "@/components/collections/collection-multi-select";
+import { useItemTypes } from "@/components/items/item-types-context";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,33 +31,29 @@ import {
   type UploadedFile,
 } from "@/components/items/file-upload";
 import { ItemFormFields } from "@/components/items/item-form-fields";
-import { getItemTypeIcon, getItemTypeLabel } from "@/lib/item-type-styles";
-import { FILE_TYPE_NAMES } from "@/lib/item-form-constants";
-import { isAtItemLimit } from "@/lib/subscription-limits";
 import {
-  resolveDefaultCreateType,
-  type CreatableItemType,
-} from "@/lib/validations/items";
+  getItemTypeIcon,
+  getItemTypeLabel,
+  SYSTEM_ITEM_TYPE_ORDER,
+} from "@/lib/item-type-styles";
+import { getTypeSlug } from "@/lib/item-type-slugs";
+import { getSystemKindForName } from "@/lib/item-types/kinds";
+import {
+  isLinkKind,
+  resolveDefaultCreateTypeSlug,
+  toAiItemTypeName,
+} from "@/lib/item-types/normalize-create-type";
+import type { ResolvedItemType } from "@/lib/item-types/types";
+import { getItemTypeBehaviour } from "@/lib/item-types/kinds";
+import { isAtItemLimit } from "@/lib/subscription-limits";
+import type { CreateItemTypeSlug, CreatableItemType } from "@/lib/validations/items";
 import { UpgradePrompt } from "@/components/shared/upgrade-prompt";
 import { useAiItemSuggestions } from "@/hooks/use-ai-item-suggestions";
 import { consumeItemCreatePrefill } from "@/components/items/item-create-prefill";
 import { cn } from "@/lib/utils";
 
-const CREATABLE_ITEM_TYPES: {
-  type: CreatableItemType;
-  icon: string;
-}[] = [
-  { type: "snippet", icon: "Code" },
-  { type: "prompt", icon: "Sparkles" },
-  { type: "command", icon: "Terminal" },
-  { type: "note", icon: "StickyNote" },
-  { type: "link", icon: "Link" },
-  { type: "image", icon: "Image" },
-  { type: "file", icon: "File" },
-];
-
 type CreateFormState = {
-  type: CreatableItemType;
+  type: CreateItemTypeSlug;
   title: string;
   description: string;
   content: string;
@@ -67,25 +64,31 @@ type CreateFormState = {
   uploadedFile: UploadedFile | null;
 };
 
-const initialFormState: CreateFormState = {
-  type: "snippet",
-  title: "",
-  description: "",
-  content: "",
-  url: "",
-  language: "",
-  tags: "",
-  collectionIds: [],
-  uploadedFile: null,
-};
+function buildInitialFormState(
+  typeSlug: string,
+  prefill?: ReturnType<typeof consumeItemCreatePrefill>,
+): CreateFormState {
+  return {
+    type: typeSlug,
+    title: prefill?.title ?? "",
+    description: prefill?.description ?? "",
+    content: prefill?.content ?? "",
+    url: prefill?.url ?? "",
+    language: prefill?.language ?? "",
+    tags: prefill?.tags ?? "",
+    collectionIds: [],
+    uploadedFile: null,
+  };
+}
 
 type ItemCreateDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   isPro: boolean;
   itemCount: number;
-  defaultType?: CreatableItemType;
+  defaultType?: CreateItemTypeSlug | CreatableItemType;
   collections: SelectableCollection[];
+  itemTypes?: ResolvedItemType[];
 };
 
 export function ItemCreateDialog({
@@ -95,25 +98,67 @@ export function ItemCreateDialog({
   itemCount,
   defaultType,
   collections,
+  itemTypes: itemTypesProp,
 }: ItemCreateDialogProps) {
   const router = useRouter();
-  const [formState, setFormState] = useState<CreateFormState>(initialFormState);
+  const itemTypesFromContext = useItemTypes();
+  const itemTypes =
+    itemTypesProp && itemTypesProp.length > 0
+      ? itemTypesProp
+      : itemTypesFromContext;
+
+  const creatableTypes: ResolvedItemType[] = useMemo(
+    () =>
+      itemTypes.length > 0
+        ? itemTypes
+        : SYSTEM_ITEM_TYPE_ORDER.map((name) => ({
+            id: name,
+            name,
+            slug: getTypeSlug(name),
+            label: getItemTypeLabel(name, { plural: true, isSystem: true }),
+            icon: null,
+            color: null,
+            kind: getSystemKindForName(name),
+            isSystem: true,
+          })),
+    [itemTypes],
+  );
+
+  const defaultTypeSlug = resolveDefaultCreateTypeSlug(
+    defaultType,
+    creatableTypes,
+    isPro,
+  );
+
+  const [formState, setFormState] = useState<CreateFormState>(() =>
+    buildInitialFormState(defaultTypeSlug),
+  );
   const [isCreating, startCreating] = useTransition();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [customTypeUpgradeOpen, setCustomTypeUpgradeOpen] = useState(false);
 
-  const showFileUpload = FILE_TYPE_NAMES.has(formState.type);
+  const selectedType =
+    creatableTypes.find((type) => type.slug === formState.type) ??
+    creatableTypes[0];
+  const selectedBehaviour = selectedType
+    ? getItemTypeBehaviour(selectedType.kind)
+    : null;
+
+  const showFileUpload = selectedBehaviour?.usesFileUpload ?? false;
+  const requiresLinkUrl = selectedBehaviour?.usesUrlField ?? isLinkKind(selectedType);
   const canCreate =
     formState.title.trim().length > 0 &&
-    (!FILE_TYPE_NAMES.has(formState.type) || formState.uploadedFile !== null) &&
-    (formState.type !== "link" || formState.url.trim().length > 0) &&
+    (!showFileUpload || formState.uploadedFile !== null) &&
+    (!requiresLinkUrl || formState.url.trim().length > 0) &&
     !isCreating;
 
-  const suggestContent =
-    formState.type === "link"
-      ? formState.content.trim() || formState.url.trim()
-      : formState.content.trim();
+  const aiTypeName = selectedType ? toAiItemTypeName(selectedType) : "snippet";
+
+  const suggestContent = isLinkKind(selectedType)
+    ? formState.content.trim() || formState.url.trim()
+    : formState.content.trim();
   const summaryContentInput = {
-    type: formState.type,
+    type: aiTypeName,
     content: formState.content,
     url: formState.url,
     fileName: formState.uploadedFile?.fileName,
@@ -123,7 +168,7 @@ export function ItemCreateDialog({
   const aiSuggestions = useAiItemSuggestions({
     title: formState.title,
     tags: formState.tags,
-    type: formState.type,
+    type: aiTypeName,
     suggestContent,
     summaryContentInput,
     onTagsChange: (tags) => handleFormChange({ tags }),
@@ -138,23 +183,20 @@ export function ItemCreateDialog({
 
     if (justOpened) {
       const prefill = consumeItemCreatePrefill();
-      setFormState({
-        ...initialFormState,
-        type: resolveDefaultCreateType(prefill?.type ?? defaultType, isPro),
-        title: prefill?.title ?? "",
-        description: prefill?.description ?? "",
-        content: prefill?.content ?? "",
-        url: prefill?.url ?? "",
-        language: prefill?.language ?? "",
-        tags: prefill?.tags ?? "",
-      });
+      const prefillType = prefill?.type ?? defaultType;
+      const resolvedSlug = resolveDefaultCreateTypeSlug(
+        prefillType,
+        creatableTypes,
+        isPro,
+      );
+      setFormState(buildInitialFormState(resolvedSlug, prefill ?? undefined));
       resetSuggestions();
     }
-  }, [open, defaultType, isPro, resetSuggestions]);
+  }, [open, defaultType, isPro, resetSuggestions, creatableTypes]);
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
-      setFormState(initialFormState);
+      setFormState(buildInitialFormState(defaultTypeSlug));
       aiSuggestions.resetSuggestions();
     }
 
@@ -165,7 +207,23 @@ export function ItemCreateDialog({
     setFormState((previous) => ({ ...previous, ...patch }));
   }
 
-  function handleTypeChange(type: CreatableItemType) {
+  function handleTypeChange(type: CreateItemTypeSlug) {
+    const nextType = creatableTypes.find((entry) => entry.slug === type);
+
+    if (nextType && !nextType.isSystem && !isPro) {
+      setCustomTypeUpgradeOpen(true);
+      return;
+    }
+
+    if (
+      nextType &&
+      (nextType.kind === "file" || nextType.kind === "image") &&
+      !isPro
+    ) {
+      setUpgradeOpen(true);
+      return;
+    }
+
     setFormState((previous) => ({
       ...previous,
       type,
@@ -210,11 +268,16 @@ export function ItemCreateDialog({
       }
 
       toast.success("Item created");
-      setFormState(initialFormState);
+      setFormState(buildInitialFormState(defaultTypeSlug));
       onOpenChange(false);
       router.refresh();
     });
   }
+
+  const selectValue =
+    creatableTypes.some((type) => type.slug === formState.type)
+      ? formState.type
+      : (selectedType?.slug ?? defaultTypeSlug);
 
   return (
     <>
@@ -236,25 +299,36 @@ export function ItemCreateDialog({
           <div className="space-y-2">
             <Label htmlFor="item-create-type">Type</Label>
             <Select
-              value={formState.type}
+              value={selectValue}
               onValueChange={(value) =>
-                handleTypeChange(value as CreatableItemType)
+                handleTypeChange(value as CreateItemTypeSlug)
               }
             >
               <SelectTrigger id="item-create-type" className="w-fit min-w-40">
-                <SelectValue>{getItemTypeLabel(formState.type)}</SelectValue>
+                <SelectValue>
+                  {selectedType?.isSystem
+                    ? getItemTypeLabel(selectedType.name, { isSystem: true })
+                    : selectedType?.name}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {CREATABLE_ITEM_TYPES.map(({ type, icon }) => (
+                {creatableTypes.map((type) => (
                   <SelectItem
-                    key={type}
-                    value={type}
-                    disabled={FILE_TYPE_NAMES.has(type) && !isPro}
+                    key={type.id}
+                    value={type.slug}
+                    disabled={
+                      ((type.kind === "file" || type.kind === "image") &&
+                        !isPro) ||
+                      (!type.isSystem && !isPro)
+                    }
                   >
-                    {createElement(getItemTypeIcon(icon), {
+                    {createElement(getItemTypeIcon(type.icon), {
                       className: "size-4 shrink-0",
                     })}
-                    {getItemTypeLabel(type)}
+                    {type.isSystem
+                      ? getItemTypeLabel(type.name, { isSystem: true })
+                      : type.name}
+                    {!type.isSystem && !isPro ? " (Pro)" : null}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -263,9 +337,9 @@ export function ItemCreateDialog({
 
           {showFileUpload ? (
             <div className="space-y-2">
-              <Label>{formState.type === "image" ? "Image" : "File"}</Label>
+              <Label>{selectedType?.kind === "image" ? "Image" : "File"}</Label>
               <FileUpload
-                category={formState.type === "image" ? "image" : "file"}
+                category={selectedType?.kind === "image" ? "image" : "file"}
                 value={formState.uploadedFile}
                 onChange={(uploadedFile) => handleFormChange({ uploadedFile })}
                 disabled={isCreating}
@@ -275,7 +349,8 @@ export function ItemCreateDialog({
 
           <ItemFormFields
             idPrefix="item-create"
-            typeName={formState.type}
+            typeName={selectedType?.name ?? formState.type}
+            typeKind={selectedType?.kind}
             formState={formState}
             onChange={handleFormChange}
             collections={collections}
@@ -316,6 +391,11 @@ export function ItemCreateDialog({
       open={upgradeOpen}
       onOpenChange={setUpgradeOpen}
       reason="item_limit"
+    />
+    <UpgradePrompt
+      open={customTypeUpgradeOpen}
+      onOpenChange={setCustomTypeUpgradeOpen}
+      reason="general"
     />
     </>
   );

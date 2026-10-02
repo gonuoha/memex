@@ -79,7 +79,7 @@ export function KeyboardShortcutsDialog({
   const mod = formatModifierSymbol(isMac);
 
   const typeRows: ShortcutRow[] = SYSTEM_ITEM_TYPE_ORDER.map((type, index) => ({
-    label: getItemTypeLabel(type, { plural: true }),
+    label: getItemTypeLabel(type, { plural: true, isSystem: true }),
     keys: ["g", String(index + 1)],
   }));
 

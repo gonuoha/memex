@@ -21,6 +21,7 @@ import {
 } from "@/lib/db/items";
 import { getSidebarData, type SidebarData } from "@/lib/db/sidebar";
 import { getUserPreferences, getEditorPreferences } from "@/lib/db/settings";
+import { getUserItemTypes, type ResolvedItemType } from "@/lib/item-types/resolve";
 import { getCurrentUser, type DashboardUser } from "@/lib/db/user";
 import type { EditorPreferences } from "@/lib/editor-preferences";
 import type { UserPreferences } from "@/lib/user-preferences";
@@ -48,6 +49,7 @@ export type DashboardLayoutData = {
     itemCount: number;
     collectionCount: number;
   };
+  itemTypes: ResolvedItemType[];
 };
 
 export const getDashboardPageData = cache(
@@ -83,13 +85,14 @@ export const getDashboardPageData = cache(
 export const getDashboardLayoutData = cache(
   async (): Promise<DashboardLayoutData> => {
     const user = await getCurrentUser();
-    const [sidebarData, collections, editorPreferences, userPreferences, stats] =
+    const [sidebarData, collections, editorPreferences, userPreferences, stats, itemTypes] =
       await Promise.all([
         getSidebarData(user),
         getSelectableCollections(user.id),
         getEditorPreferences(user.id),
         getUserPreferences(user.id),
         getUserItemStats(user.id),
+        getUserItemTypes(user.id),
       ]);
 
     return {
@@ -102,6 +105,7 @@ export const getDashboardLayoutData = cache(
         itemCount: stats.itemCount,
         collectionCount: stats.collectionCount,
       },
+      itemTypes,
     };
   },
 );

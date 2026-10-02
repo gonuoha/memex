@@ -40,20 +40,27 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  CODE_EDITOR_TYPE_NAMES,
   CodeEditor,
   type CodeEditorView,
 } from "@/components/code-editor/code-editor";
 import {
-  MARKDOWN_EDITOR_TYPE_NAMES,
   MarkdownEditor,
   type MarkdownEditorView,
 } from "@/components/markdown-editor/markdown-editor";
 import type { ItemDetail } from "@/lib/db/items";
 import { getItemCopyText } from "@/lib/item-copy";
+import {
+  getItemTypeBehaviour,
+  getSystemKindForName,
+  normalizeItemTypeKind,
+  type ItemTypeKind,
+} from "@/lib/item-types/kinds";
 import { formatFileSize } from "@/lib/file-upload";
 import { getItemTypeIcon, getItemTypeStyles } from "@/lib/item-type-styles";
-import { isShareableItemType } from "@/lib/share-links/constants";
+import {
+  toAiItemTypeName,
+} from "@/lib/item-types/normalize-create-type";
+import { isShareableItemTypeKind } from "@/lib/share-links/constants";
 import { cn } from "@/lib/utils";
 
 import { useItemDrawer } from "./item-drawer-context";
@@ -168,9 +175,19 @@ function ItemDrawerContent({
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
   const { copy } = useCopyToClipboard();
   const typeName = item.type.name.toLowerCase();
-  const showExplainableCodeEditor = CODE_EDITOR_TYPE_NAMES.has(typeName);
+  const resolvedKind: ItemTypeKind = item.type.kind
+    ? normalizeItemTypeKind(item.type.kind)
+    : getSystemKindForName(typeName);
+  const typeBehaviour = getItemTypeBehaviour(resolvedKind);
+  const showExplainableCodeEditor = typeBehaviour.usesCodeEditor;
   const showOptimizablePrompt = typeName === "prompt";
-  const showShare = isShareableItemType(typeName);
+  const showShare = isShareableItemTypeKind(resolvedKind);
+  const aiItemType = toAiItemTypeName({
+    name: item.type.name,
+    slug: item.type.slug ?? item.type.name,
+    kind: resolvedKind,
+    isSystem: item.type.isSystem ?? true,
+  });
 
   async function handleCopy() {
     await copy(getItemCopyText(item));
@@ -186,7 +203,7 @@ function ItemDrawerContent({
         title: item.title,
         content: item.content ?? "",
         language: item.language ?? undefined,
-        type: typeName as "snippet" | "command",
+        type: aiItemType as "snippet" | "command",
       });
 
       if (!result.success) {
@@ -333,7 +350,7 @@ function ItemDrawerContent({
                   onUpgrade={() => setIsUpgradeOpen(true)}
                   isExplaining={isExplaining}
                 />
-              ) : MARKDOWN_EDITOR_TYPE_NAMES.has(typeName) ? (
+              ) : typeBehaviour.usesMarkdownEditor ? (
                 <MarkdownEditor
                   value={item.content}
                   readOnly
@@ -371,7 +388,7 @@ function ItemDrawerContent({
             </section>
           ) : null}
 
-          {item.fileName && item.type.name.toLowerCase() === "image" ? (
+          {item.fileName && resolvedKind === "image" ? (
             <section className="space-y-2">
               <h3 className="text-sm text-muted-foreground">Image</h3>
               <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
@@ -389,7 +406,7 @@ function ItemDrawerContent({
             </section>
           ) : null}
 
-          {item.fileName && item.type.name.toLowerCase() === "file" ? (
+          {item.fileName && resolvedKind === "file" ? (
             <section className="space-y-2">
               <h3 className="text-sm text-muted-foreground">File</h3>
               <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 p-3">
@@ -495,6 +512,9 @@ function ItemDrawerEditor({
   isSaving: boolean;
 }) {
   const typeName = item.type.name.toLowerCase();
+  const typeKind: ItemTypeKind = item.type.kind
+    ? normalizeItemTypeKind(item.type.kind)
+    : getSystemKindForName(typeName);
   const canSave = formState.title.trim().length > 0 && !isSaving;
 
   return (
@@ -519,6 +539,7 @@ function ItemDrawerEditor({
           <ItemFormFields
             idPrefix="item-edit"
             typeName={typeName}
+            typeKind={typeKind}
             formState={formState}
             onChange={onChange}
             collections={collections}
@@ -585,6 +606,17 @@ function ItemDrawerPanel({
   const [isDeleting, startDeleting] = useTransition();
 
   const editTypeName = item?.type.name.toLowerCase() ?? "";
+  const editKind: ItemTypeKind = item?.type.kind
+    ? normalizeItemTypeKind(item.type.kind)
+    : getSystemKindForName(editTypeName);
+  const editAiType =
+    item &&
+    toAiItemTypeName({
+      name: item.type.name,
+      slug: item.type.slug ?? item.type.name,
+      kind: editKind,
+      isSystem: item.type.isSystem ?? true,
+    });
   const activeFormState = formState ?? {
     title: "",
     description: "",
@@ -595,8 +627,8 @@ function ItemDrawerPanel({
     collectionIds: [],
   };
 
-  function getSuggestContent(state: EditFormState, typeName: string): string {
-    if (typeName === "link") {
+  function getSuggestContent(state: EditFormState, kind: ItemTypeKind): string {
+    if (kind === "link") {
       return state.content.trim() || state.url.trim();
     }
 
@@ -618,16 +650,16 @@ function ItemDrawerPanel({
   }
 
   const suggestContent =
-    formState && item ? getSuggestContent(formState, editTypeName) : "";
+    formState && item ? getSuggestContent(formState, editKind) : "";
   const summaryContentInput =
-    formState && item
-      ? getSummaryContentInput(formState, editTypeName, item.fileName)
-      : { type: editTypeName };
+    formState && item && editAiType
+      ? getSummaryContentInput(formState, editAiType, item.fileName)
+      : { type: editAiType ?? "snippet" };
 
   const aiSuggestions = useAiItemSuggestions({
     title: activeFormState.title,
     tags: activeFormState.tags,
-    type: editTypeName,
+    type: editAiType ?? "snippet",
     suggestContent,
     summaryContentInput,
     onTagsChange: (tags) => handleFormChange({ tags }),

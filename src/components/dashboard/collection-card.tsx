@@ -72,7 +72,11 @@ export function CollectionCard({ collection }: CollectionCardProps) {
                   style={{ ...styles.textStyle, ...styles.bgStyle }}
                 >
                   <Icon className="size-3" aria-hidden="true" />
-                  <span className="sr-only">{getItemTypeLabel(type.name)}</span>
+                  <span className="sr-only">
+                    {getItemTypeLabel(type.name, {
+                      isSystem: type.isSystem ?? true,
+                    })}
+                  </span>
                 </span>
               );
             })}

@@ -18,10 +18,16 @@ const TYPE_DESCRIPTIONS: Record<CreatableItemType, string> = {
   image: "Screenshots and visual references (Pro).",
 };
 
+function systemDescriptionForName(typeName: string): string | undefined {
+  const key = typeName.toLowerCase() as CreatableItemType;
+  return TYPE_DESCRIPTIONS[key];
+}
+
 type ItemTypeEmptyStateProps = {
   typeName: string;
-  creatableType: CreatableItemType;
+  creatableType: string;
   typeIcon: string | null;
+  isSystem: boolean;
   isPro: boolean;
   itemCount: number;
   collections: SelectableCollection[];
@@ -31,11 +37,20 @@ export function ItemTypeEmptyState({
   typeName,
   creatableType,
   typeIcon,
+  isSystem,
   isPro,
   itemCount,
   collections,
 }: ItemTypeEmptyStateProps) {
-  const label = getItemTypeLabel(typeName, { plural: true });
+  const label = isSystem
+    ? getItemTypeLabel(typeName, { plural: true, isSystem: true })
+    : typeName.trim();
+  const description =
+    (isSystem && systemDescriptionForName(typeName)) ||
+    "Items you save under this custom type.";
+  const newLabel = isSystem
+    ? `New ${getItemTypeLabel(typeName, { isSystem: true })}`
+    : `New ${typeName.trim()}`;
 
   return (
     <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-6 py-12 text-center">
@@ -44,7 +59,7 @@ export function ItemTypeEmptyState({
       </div>
       <h3 className="mt-4 text-base font-medium">No {label.toLowerCase()} yet</h3>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">
-        {TYPE_DESCRIPTIONS[creatableType]}
+        {description}
       </p>
       <ItemCreateDialogHost
         isPro={isPro}
@@ -53,7 +68,7 @@ export function ItemTypeEmptyState({
         defaultType={creatableType}
         trigger={
           <Button type="button" className="mt-6">
-            New {getItemTypeLabel(typeName)}
+            {newLabel}
           </Button>
         }
       />

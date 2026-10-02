@@ -4,6 +4,7 @@ import { apiV1Error, apiV1Json } from "@/lib/api/v1/response";
 import { readApiV1JsonBody } from "@/lib/api/v1/request";
 import { revalidateAppAfterItemMutation } from "@/lib/api/v1/revalidate-app";
 import { serializeApiV1Item, serializeApiV1Items } from "@/lib/api/v1/serialize";
+import { resolveItemTypeBySlug } from "@/lib/item-types/resolve";
 import { withApiAuth } from "@/lib/api/v1/with-api-auth";
 import {
   apiV1CreateItemSchema,
@@ -21,6 +22,19 @@ export const GET = withApiAuth(async (request, auth) => {
       400,
       { details: formatZodValidationDetails(parsed.error) },
     );
+  }
+
+  if (parsed.data.type) {
+    const resolvedType = await resolveItemTypeBySlug(
+      auth.userId,
+      parsed.data.type,
+    );
+
+    if (!resolvedType) {
+      return apiV1Error("validation_error", "Unknown item type", 400, {
+        details: [{ path: "type", message: "Unknown item type" }],
+      });
+    }
   }
 
   const listed = await listApiV1Items(auth.userId, parsed.data);
@@ -56,6 +70,10 @@ export const POST = withApiAuth(async (request, auth) => {
   const result = await executeCreateTextItem(auth.userId, parsed.data);
 
   if (!result.success) {
+    if (result.kind === "pro_required") {
+      return apiV1Error("forbidden", result.message, 403);
+    }
+
     const status = result.kind === "item_limit" ? 409 : 422;
     const code = result.kind === "item_limit" ? "conflict" : "validation_error";
 

@@ -17,6 +17,9 @@ type DbClient = Prisma.TransactionClient | typeof prisma;
 export type CollectionItemType = {
   id: string;
   name: string;
+  kind?: string | null;
+  slug?: string | null;
+  isSystem?: boolean;
   icon: string | null;
   color: string | null;
 };

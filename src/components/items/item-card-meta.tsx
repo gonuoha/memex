@@ -59,7 +59,11 @@ export function ItemCardMeta({
           style={dotStyle}
           aria-hidden="true"
         />
-        <span className="truncate">{getItemTypeLabel(item.type.name)}</span>
+        <span className="truncate">
+          {getItemTypeLabel(item.type.name, {
+            isSystem: item.type.isSystem ?? true,
+          })}
+        </span>
       </span>
       {item.isPinned ? (
         <span className="inline-flex items-center gap-1">

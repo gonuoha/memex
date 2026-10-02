@@ -26,6 +26,11 @@ vi.mock("@/lib/db/advisory-lock", () => ({
   takeUserAdvisoryLock: vi.fn(),
 }));
 
+vi.mock("@/lib/db/item-types", () => ({
+  createCustomItemTypeWithTransaction: vi.fn(),
+  CustomItemTypeLimitError: class CustomItemTypeLimitError extends Error {},
+}));
+
 vi.mock("@/lib/import/duplicate-hash", () => ({
   buildImportDuplicateFingerprint: vi.fn(() => "fp"),
   fetchActiveItemDuplicateFingerprints: vi.fn(),
@@ -41,6 +46,9 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import { runWithFreeTierCollectionGuard } from "@/lib/db/free-tier-limits";
+import {
+  createCustomItemTypeWithTransaction,
+} from "@/lib/db/item-types";
 import { createItem, resolveTagNamesForUser } from "@/lib/db/items";
 import { fetchActiveItemDuplicateFingerprints } from "@/lib/import/duplicate-hash";
 import { prisma } from "@/lib/prisma";
@@ -54,6 +62,7 @@ const mockResolveTags = vi.mocked(resolveTagNamesForUser);
 const mockFetchFingerprints = vi.mocked(fetchActiveItemDuplicateFingerprints);
 const mockTransaction = vi.mocked(prisma.$transaction);
 const mockItemTypeFindMany = vi.mocked(prisma.itemType.findMany);
+const mockCreateCustomType = vi.mocked(createCustomItemTypeWithTransaction);
 
 const exportPayload = {
   version: 1 as const,
@@ -103,13 +112,21 @@ describe("runMemexImport", () => {
     mockResolveTags.mockResolvedValue(["react"]);
     mockCreateItem.mockResolvedValue({} as never);
     mockItemTypeFindMany.mockResolvedValue([
-      { id: "type-1", name: "snippet" },
+      { id: "type-1", name: "snippet", isSystem: true },
     ] as never);
-    mockTransaction.mockImplementation(async (callback) =>
-      callback({
-        item: { count: vi.fn().mockResolvedValue(0) },
-      } as never),
-    );
+    mockTransaction.mockImplementation(async (callback) => {
+      if (typeof callback === "function") {
+        return callback({
+          item: { count: vi.fn().mockResolvedValue(0) },
+          itemType: {
+            count: vi.fn().mockResolvedValue(0),
+            findFirst: vi.fn().mockResolvedValue(null),
+          },
+        } as never);
+      }
+
+      return undefined;
+    });
     mockCreateItem.mockResolvedValue({} as never);
   });
 
@@ -149,6 +166,128 @@ describe("runMemexImport", () => {
     expect(result).toMatchObject({
       created: 0,
       failed: 1,
+    });
+  });
+
+  it("skips custom-type items for free users", async () => {
+    mockItemTypeFindMany.mockResolvedValue([
+      { id: "type-1", name: "snippet", isSystem: true },
+    ] as never);
+
+    const result = await runMemexImport("user-1", false, {
+      ...exportPayload,
+      items: [
+        exportPayload.items[0],
+        {
+          ...exportPayload.items[0],
+          type: "Runbooks",
+          title: "Custom doc",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      created: 1,
+      skippedUnsupported: 1,
+    });
+  });
+
+  it("recreates custom types for Pro users from export types metadata", async () => {
+    mockCreateCustomType.mockResolvedValue({
+      id: "type-custom",
+      name: "Runbooks",
+      kind: "markdown",
+      slug: "runbooks",
+      icon: "BookOpen",
+      color: "#6366F1",
+    });
+
+    const result = await runMemexImport("user-1", true, {
+      version: 1,
+      exportedAt: "2026-01-01T00:00:00.000Z",
+      collections: [],
+      types: [
+        {
+          name: "Runbooks",
+          kind: "markdown",
+          icon: "BookOpen",
+          color: "#6366F1",
+        },
+      ],
+      items: [
+        {
+          type: "Runbooks",
+          title: "Deploy",
+          description: null,
+          content: "steps",
+          url: null,
+          language: null,
+          isFavorite: false,
+          isPinned: false,
+          tags: [],
+          collections: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      created: 1,
+      skippedUnsupported: 0,
+    });
+    expect(mockCreateCustomType).toHaveBeenCalledOnce();
+    expect(mockCreateItem).toHaveBeenCalledOnce();
+  });
+
+  it("does not import items when custom type creation hits the 20-type cap", async () => {
+    mockTransaction.mockImplementationOnce(async (callback) => {
+      if (typeof callback === "function") {
+        return callback({
+          item: { count: vi.fn().mockResolvedValue(0) },
+          itemType: {
+            count: vi.fn().mockResolvedValue(20),
+            findFirst: vi.fn().mockResolvedValue(null),
+          },
+        } as never);
+      }
+
+      return undefined;
+    });
+
+    const result = await runMemexImport("user-1", true, {
+      version: 1,
+      exportedAt: "2026-01-01T00:00:00.000Z",
+      collections: [],
+      types: [
+        {
+          name: "Extra",
+          kind: "markdown",
+          icon: "BookOpen",
+          color: "#6366F1",
+        },
+      ],
+      items: [
+        {
+          type: "Extra",
+          title: "Doc",
+          description: null,
+          content: "x",
+          url: null,
+          language: null,
+          isFavorite: false,
+          isPinned: false,
+          tags: [],
+          collections: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      created: 0,
+      skippedInvalid: 1,
     });
   });
 });

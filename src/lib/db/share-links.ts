@@ -9,8 +9,9 @@ import {
 } from "@/lib/share-links/active";
 import {
   FREE_ACTIVE_SHARE_LINK_LIMIT,
-  isShareableItemType,
+  isShareableItemTypeKind,
 } from "@/lib/share-links/constants";
+import { getSystemKindForName, normalizeItemTypeKind } from "@/lib/item-types/kinds";
 import { generateShareLinkToken } from "@/lib/share-links/token";
 
 export type ShareLinkRecord = {
@@ -247,7 +248,7 @@ export async function getPublicSharedItemByToken(
           deletedAt: true,
           createdAt: true,
           updatedAt: true,
-          type: { select: { name: true } },
+          type: { select: { name: true, kind: true, isSystem: true } },
           tags: { select: { tag: { select: { name: true } } } },
         },
       },
@@ -266,11 +267,17 @@ export async function getPublicSharedItemByToken(
     return null;
   }
 
-  const typeName = link.item.type.name;
+  const typeRow = link.item.type;
+  const typeKind =
+    typeRow.isSystem === false
+      ? normalizeItemTypeKind(typeRow.kind ?? "markdown")
+      : getSystemKindForName(typeRow.name);
 
-  if (!isShareableItemType(typeName)) {
+  if (!isShareableItemTypeKind(typeKind)) {
     return null;
   }
+
+  const typeName = link.item.type.name;
 
   return {
     shareLinkId: link.id,

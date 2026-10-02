@@ -9,7 +9,6 @@ import {
   getItemTypeLabel,
   getItemTypeStyles,
 } from "@/lib/item-type-styles";
-import { getTypeSlug } from "@/lib/item-type-slugs";
 import { cn } from "@/lib/utils";
 
 import { SidebarCollapseButton } from "./sidebar-collapse-button";
@@ -108,18 +107,27 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
               {itemTypes.map((type) => {
                 const Icon = getItemTypeIcon(type.icon);
                 const styles = getItemTypeStyles(type.color);
-                const isProType = isProItemType(type.name);
+                const isProType =
+                  type.kind === "file" ||
+                  type.kind === "image" ||
+                  isProItemType(type.name);
                 const href =
                   isProType && !user.isPro
                     ? "/upgrade"
-                    : `/items/${getTypeSlug(type.name)}`;
+                    : `/items/${type.slug}`;
+                const label = type.isSystem
+                  ? getItemTypeLabel(type.name, {
+                      plural: true,
+                      isSystem: type.isSystem,
+                    })
+                  : type.name;
 
                 return (
                   <SidebarNavLink
                     key={type.id}
                     href={href}
                     match={isProType && !user.isPro ? "exact" : "prefix"}
-                    title={getItemTypeLabel(type.name, { plural: true })}
+                    title={label}
                     activeIndicatorStyle={
                       type.color?.startsWith("#")
                         ? { borderLeftColor: type.color }
@@ -131,9 +139,7 @@ export function SidebarContent({ sidebarData }: SidebarContentProps) {
                       style={styles.textStyle}
                     />
                     <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                      <span className="truncate">
-                        {getItemTypeLabel(type.name, { plural: true })}
-                      </span>
+                      <span className="truncate">{label}</span>
                       {isProType && !user.isPro ? (
                         <Badge
                           variant="outline"

@@ -1,3 +1,6 @@
+import type { ItemTypeKind } from "@/lib/item-types/kinds";
+import { getSystemKindForName, normalizeItemTypeKind } from "@/lib/item-types/kinds";
+
 const MARKDOWN_STRIP_PATTERN =
   /```[\s\S]*?```|`[^`]*`|\[([^\]]*)\]\([^)]*\)|[#>*_~\-]+/g;
 
@@ -11,7 +14,7 @@ export function stripSimpleMarkdown(value: string): string {
 const SNIPPET_PREVIEW_LINES = 4;
 
 export type ItemPreviewInput = {
-  typeName: string;
+  kind: ItemTypeKind;
   description: string | null;
   contentExcerpt: string | null;
   url: string | null;
@@ -19,11 +22,11 @@ export type ItemPreviewInput = {
 };
 
 export function buildItemListPreview(input: ItemPreviewInput): string | null {
-  const type = input.typeName.toLowerCase();
+  const kind = input.kind;
   const description = input.description?.trim();
   const content = input.contentExcerpt?.trim();
 
-  if (type === "link" && input.url) {
+  if (kind === "link" && input.url) {
     try {
       const parsed = new URL(input.url);
       const path = parsed.pathname === "/" ? "" : parsed.pathname;
@@ -33,11 +36,11 @@ export function buildItemListPreview(input: ItemPreviewInput): string | null {
     }
   }
 
-  if (type === "file" && input.fileName) {
+  if (kind === "file" && input.fileName) {
     return input.fileName;
   }
 
-  if (type === "snippet") {
+  if (kind === "code") {
     const body = input.contentExcerpt ?? input.description;
     if (!body?.trim()) {
       return null;
@@ -46,16 +49,7 @@ export function buildItemListPreview(input: ItemPreviewInput): string | null {
     return lines.slice(0, SNIPPET_PREVIEW_LINES).join("\n").trimEnd();
   }
 
-  if (type === "command") {
-    const body = content ?? description;
-    if (!body) {
-      return null;
-    }
-    const line = body.split("\n").find((entry) => entry.trim().length > 0) ?? body;
-    return line.trimStart().startsWith("$") ? line.trim() : `$ ${line.trim()}`;
-  }
-
-  if (type === "prompt" || type === "note") {
+  if (kind === "markdown") {
     const raw = content ?? description;
     return raw ? stripSimpleMarkdown(raw) : null;
   }
@@ -67,13 +61,26 @@ export function buildItemListPreview(input: ItemPreviewInput): string | null {
   return content ?? null;
 }
 
-export function getItemPreviewLineClamp(typeName: string): number {
-  const type = typeName.toLowerCase();
-  if (type === "snippet" || type === "command") {
+export function getItemPreviewLineClamp(kind: ItemTypeKind): number {
+  if (kind === "code") {
     return 4;
   }
-  if (type === "prompt" || type === "note") {
+  if (kind === "markdown") {
     return 2;
   }
   return 2;
+}
+
+export function resolvePreviewKind(
+  type: { name: string; kind?: string | null; isSystem?: boolean },
+): ItemTypeKind {
+  if (type.kind) {
+    return normalizeItemTypeKind(type.kind);
+  }
+
+  if (type.isSystem === false) {
+    return "markdown";
+  }
+
+  return getSystemKindForName(type.name);
 }

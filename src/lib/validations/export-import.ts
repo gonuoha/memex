@@ -7,15 +7,14 @@ import {
 } from "@/lib/validations/items";
 import { createCollectionSchema } from "@/lib/validations/collections";
 
-const exportItemTypeSchema = z.enum([
-  "snippet",
-  "prompt",
-  "command",
-  "note",
-  "link",
-  "file",
-  "image",
-]);
+const exportItemTypeSchema = z.string().trim().min(1).max(30);
+
+export const exportCustomTypeSchema = z.object({
+  name: z.string().trim().min(1).max(30),
+  kind: z.enum(["code", "markdown", "link"]),
+  icon: z.string().trim().min(1).max(40),
+  color: z.string().trim().min(1).max(20),
+});
 
 const exportFileMetaSchema = z.object({
   fileName: z.string(),
@@ -49,6 +48,7 @@ export const memexExportSchema = z.object({
   exportedAt: z.string(),
   items: z.array(exportItemSchema).max(10_000),
   collections: z.array(exportCollectionSchema).max(1_000),
+  types: z.array(exportCustomTypeSchema).max(20).optional(),
 });
 
 export type MemexExport = z.infer<typeof memexExportSchema>;

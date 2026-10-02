@@ -7,22 +7,22 @@ describe("item-preview", () => {
     expect(stripSimpleMarkdown("## Hello **world**")).toBe("Hello world");
   });
 
-  it("builds command preview with dollar prefix", () => {
+  it("builds code preview from content excerpt", () => {
     expect(
       buildItemListPreview({
-        typeName: "command",
+        kind: "code",
         description: null,
         contentExcerpt: "npm test",
         url: null,
         fileName: null,
       }),
-    ).toBe("$ npm test");
+    ).toBe("npm test");
   });
 
   it("builds link preview from hostname and path", () => {
     expect(
       buildItemListPreview({
-        typeName: "link",
+        kind: "link",
         description: null,
         contentExcerpt: null,
         url: "https://example.com/docs/guide",
@@ -34,7 +34,7 @@ describe("item-preview", () => {
   it("keeps the first lines of a snippet with indentation", () => {
     expect(
       buildItemListPreview({
-        typeName: "snippet",
+        kind: "code",
         description: null,
         contentExcerpt: "\nservices:\n  db:\n    image: postgres\n    ports:\n      - 5432",
         url: null,

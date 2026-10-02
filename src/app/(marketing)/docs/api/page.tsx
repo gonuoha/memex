@@ -81,9 +81,13 @@ export default function ApiDocsPage() {
         <p className="font-medium text-foreground">GET /api/v1/items</p>
         <p>
           Returns <code>{`{ "items": [...], "nextCursor": string | null }`}</code>.
-          Filters: <code>type</code> (slug: snippet, prompt, command, note, link),
-          <code>tag</code>, <code>collection</code>, <code>q</code> (full-text),
-          <code>limit</code> (default 25, max 100), <code>cursor</code>.
+          Filters: <code>type</code> (system type aliases such as
+          <code>snippet</code> or <code>notes</code>, or your custom type
+          <strong> slug</strong>), <code>tag</code>, <code>collection</code>,
+          <code>q</code> (full-text), <code>limit</code> (default 25, max 100),
+          <code>cursor</code>. Unknown <code>type</code> values return
+          <code>400</code> with <code>validation_error</code> (including custom
+          slugs that do not belong to your account).
         </p>
         <p>
           Without <code>q</code>, pagination uses keyset cursors ordered by
@@ -99,9 +103,14 @@ export default function ApiDocsPage() {
       <LegalSection title="Create & update items">
         <p className="font-medium text-foreground">POST /api/v1/items</p>
         <p>
-          Text types only (snippet, prompt, command, note, link). Title max 200
-          chars; description 2000; content 100,000; URL max 2048 (required for
-          link). Up to 20 tags (40 chars each) and 50 collections.
+          Text types (system or custom: code, markdown, link kinds). Send
+          <code>type</code> as the system singular name (for example
+          <code>snippet</code>, <code>note</code>) or your custom type slug.
+          Title max 200 chars; description 2000; content 100,000; URL max 2048
+          (required for link kinds). Creating items in custom types without an
+          active Pro subscription returns <code>403</code> with code
+          <code>forbidden</code>. Up to 20 tags (40 chars each) and 50
+          collections.
         </p>
         <p className="mt-4 font-medium text-foreground">PATCH /api/v1/items/:id</p>
         <p>

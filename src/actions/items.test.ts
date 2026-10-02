@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ItemDetail } from "@/lib/db/items";
+import type { ItemDetail, ItemTypeBySlug } from "@/lib/db/items";
 
 import { defaultStats } from "./__tests__/fixtures";
 import { mockAuth, mockUnauthenticated } from "./__tests__/mock-auth";
@@ -92,6 +92,8 @@ import {
   getObjectMetadata,
 } from "@/lib/r2/storage";
 import { itemLimitErrorMessage } from "@/lib/subscription-limits";
+import { getTypeSlug } from "@/lib/item-type-slugs";
+import { getSystemKindForName, type ItemTypeKind } from "@/lib/item-types/kinds";
 
 import {
   createItem,
@@ -127,6 +129,28 @@ const mockReleasePendingUpload = vi.mocked(releasePendingUpload);
 
 function mockPendingUpload(key: string, size: number, category: "image" | "file") {
   mockFindPendingUpload.mockResolvedValue({ key, size, category });
+}
+
+function stubItemType(partial: {
+  id: string;
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+  kind?: ItemTypeKind;
+  slug?: string;
+  isSystem?: boolean;
+}): ItemTypeBySlug {
+  const name = partial.name.toLowerCase();
+
+  return {
+    ...partial,
+    name,
+    kind: (partial.kind ?? getSystemKindForName(name)) as ItemTypeKind,
+    slug: partial.slug ?? getTypeSlug(name),
+    isSystem: partial.isSystem ?? true,
+    icon: partial.icon ?? null,
+    color: partial.color ?? null,
+  };
 }
 
 const pngHeader = Buffer.from([
@@ -204,12 +228,12 @@ describe("createItem", () => {
 
   it("creates an item and returns the created record", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-snippet",
       name: "snippet",
       icon: "Code",
       color: "#3b82f6",
-    });
+    }));
     mockCreateItemInDb.mockResolvedValue(createdItem);
 
     const result = await createItem({
@@ -242,12 +266,12 @@ describe("createItem", () => {
 
   it("rejects invalid collection selections", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-snippet",
       name: "snippet",
       icon: "Code",
       color: "#3b82f6",
-    });
+    }));
     mockValidateUserCollectionIds.mockResolvedValue(false);
 
     const result = await createItem({
@@ -265,12 +289,12 @@ describe("createItem", () => {
 
   it("creates an item with collection assignments", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-snippet",
       name: "snippet",
       icon: "Code",
       color: "#3b82f6",
-    });
+    }));
     mockCreateItemInDb.mockResolvedValue(createdItem);
 
     const result = await createItem({
@@ -295,12 +319,12 @@ describe("createItem", () => {
 
   it("rejects file references that do not belong to the user", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-image",
       name: "image",
       icon: "Image",
       color: "#ec4899",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
 
     const result = await createItem({
@@ -320,12 +344,12 @@ describe("createItem", () => {
 
   it("rejects image item creation for non-Pro users", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-image",
       name: "image",
       icon: "Image",
       color: "#ec4899",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(false);
 
     const result = await createItem({
@@ -345,12 +369,12 @@ describe("createItem", () => {
 
   it("rejects file item creation for non-Pro users", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-file",
       name: "file",
       icon: "File",
       color: "#64748b",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(false);
 
     const result = await createItem({
@@ -370,12 +394,12 @@ describe("createItem", () => {
 
   it("creates a file item for Pro users", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-file",
       name: "file",
       icon: "File",
       color: "#64748b",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockGetUserItemStats.mockResolvedValue({ ...defaultStats, itemCount: 50 });
     mockCreateItemInDb.mockResolvedValue(createdItem);
@@ -415,12 +439,12 @@ describe("createItem", () => {
 
   it("rejects file items whose object does not exist in storage", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-file",
       name: "file",
       icon: "File",
       color: "#64748b",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockPendingUpload("users/user-1/abc123/notes.pdf", 1024, "file");
     mockGetObjectMetadata.mockResolvedValue(null);
@@ -439,12 +463,12 @@ describe("createItem", () => {
 
   it("rejects image items that reference a non-image object", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-image",
       name: "image",
       icon: "Image",
       color: "#ec4899",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockPendingUpload("users/user-1/abc123/notes.pdf", 1024, "image");
     mockGetObjectMetadata.mockResolvedValue({
@@ -467,12 +491,12 @@ describe("createItem", () => {
 
   it("rejects image items whose magic bytes do not match", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-image",
       name: "image",
       icon: "Image",
       color: "#ec4899",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockPendingUpload("users/user-1/abc123/photo.png", 1024, "image");
     mockGetObjectMetadata.mockResolvedValue({
@@ -497,14 +521,45 @@ describe("createItem", () => {
     expect(mockCreateItemInDb).not.toHaveBeenCalled();
   });
 
+  it("enforces image MIME checks when type slug is images", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
+    mockGetItemTypeBySlug.mockResolvedValue(
+      stubItemType({
+        id: "type-image",
+        name: "image",
+        slug: "images",
+        kind: "image",
+        icon: "Image",
+        color: "#ec4899",
+      }),
+    );
+    mockGetUserIsPro.mockResolvedValue(true);
+    mockPendingUpload("users/user-1/abc123/notes.pdf", 1024, "image");
+    mockGetObjectMetadata.mockResolvedValue({
+      size: 1024,
+      contentType: "application/pdf",
+    });
+
+    const result = await createItem({
+      type: "images",
+      title: "Screenshot",
+      fileUrl: "users/user-1/abc123/notes.pdf",
+      fileName: "notes.pdf",
+      fileSize: 1024,
+    });
+
+    expect(result).toEqual({ success: false, error: "Invalid file reference" });
+    expect(mockCreateItemInDb).not.toHaveBeenCalled();
+  });
+
   it("creates an image item when magic bytes match the declared type", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-image",
       name: "image",
       icon: "Image",
       color: "#ec4899",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockCreateItemInDb.mockResolvedValue(createdItem);
     mockPendingUpload("users/user-1/abc123/photo.png", 2048, "image");
@@ -534,12 +589,12 @@ describe("createItem", () => {
 
   it("rejects uploads larger than the category limit reported by R2", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-file",
       name: "file",
       icon: "File",
       color: "#64748b",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockPendingUpload("users/user-1/abc123/huge.pdf", 11 * 1024 * 1024, "file");
     mockGetObjectMetadata.mockResolvedValue({
@@ -565,12 +620,12 @@ describe("createItem", () => {
 
   it("rejects file items that would exceed the Pro storage quota", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-file",
       name: "file",
       icon: "File",
       color: "#64748b",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockPendingUpload("users/user-1/abc123/notes.pdf", 2048, "file");
     mockGetObjectMetadata.mockResolvedValue({
@@ -599,12 +654,12 @@ describe("createItem", () => {
 
     beforeEach(() => {
       mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-      mockGetItemTypeBySlug.mockResolvedValue({
+      mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
         id: "type-file",
         name: "file",
         icon: "File",
         color: "#64748b",
-      });
+      }));
       mockGetUserIsPro.mockResolvedValue(true);
       mockCreateItemInDb.mockResolvedValue(createdItem);
       mockGetObjectMetadata.mockResolvedValue({
@@ -694,12 +749,12 @@ describe("createItem", () => {
 
   it("rejects item creation when a free user is at the item limit", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-snippet",
       name: "snippet",
       icon: "Code",
       color: "#3b82f6",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(false);
     mockRunWithFreeTierItemGuard.mockRejectedValue(
       new FreeTierLimitExceededError("item"),
@@ -717,12 +772,12 @@ describe("createItem", () => {
 
   it("allows Pro users to create items above the free limit", async () => {
     mockAuth.mockResolvedValue({ user: { id: "user-1" } } as never);
-    mockGetItemTypeBySlug.mockResolvedValue({
+    mockGetItemTypeBySlug.mockResolvedValue(stubItemType({
       id: "type-snippet",
       name: "snippet",
       icon: "Code",
       color: "#3b82f6",
-    });
+    }));
     mockGetUserIsPro.mockResolvedValue(true);
     mockGetUserItemStats.mockResolvedValue({ ...defaultStats, itemCount: 50 });
     mockCreateItemInDb.mockResolvedValue(createdItem);

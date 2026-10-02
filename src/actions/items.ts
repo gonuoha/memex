@@ -29,6 +29,8 @@ import {
 } from "@/lib/db/trash";
 import { validateUserCollectionIds } from "@/lib/db/collections";
 import { getTypeSlug } from "@/lib/item-type-slugs";
+import type { ItemTypeKind } from "@/lib/item-types/kinds";
+import { normalizeItemTypeKind } from "@/lib/item-types/kinds";
 import {
   FreeTierLimitExceededError,
   runWithFreeTierItemGuard,
@@ -55,7 +57,6 @@ import {
 } from "@/lib/r2/storage";
 import {
   isAtStorageLimit,
-  isProOnlyItemType,
   itemLimitErrorMessage,
   storageQuotaErrorMessage,
 } from "@/lib/subscription-limits";
@@ -63,7 +64,7 @@ import type { ActionResult } from "@/types/actions";
 import {
   createItemSchema,
   updateItemSchema,
-  type CreatableItemType,
+  type CreateItemInput,
 } from "@/lib/validations/items";
 
 type UploadedFile = {
@@ -72,8 +73,8 @@ type UploadedFile = {
   fileSize: number;
 };
 
-function getUploadCategory(type: CreatableItemType): UploadCategory {
-  return type === "image" ? "image" : "file";
+function getUploadCategory(kind: ItemTypeKind): UploadCategory {
+  return kind === "image" ? "image" : "file";
 }
 
 const INVALID_FILE_REFERENCE = "Invalid file reference";
@@ -101,7 +102,8 @@ async function rejectInvalidUpload(
  */
 async function resolveUploadedFile(
   userId: string,
-  data: { type: CreatableItemType; fileUrl?: string; fileName?: string },
+  data: Pick<CreateItemInput, "fileUrl" | "fileName">,
+  uploadKind: ItemTypeKind,
   isPro: boolean,
 ): Promise<ActionResult<UploadedFile>> {
   if (!data.fileUrl || !data.fileName || !isOwnedFileUrl(data.fileUrl, userId)) {
@@ -109,7 +111,7 @@ async function resolveUploadedFile(
   }
 
   const key = data.fileUrl;
-  const category = getUploadCategory(data.type);
+  const category = getUploadCategory(uploadKind);
   const pending = await findPendingUpload(userId, key);
 
   if (!pending) {
@@ -130,7 +132,7 @@ async function resolveUploadedFile(
     return rejectInvalidUpload(userId, key, "Uploaded file exceeds the size limit");
   }
 
-  if (data.type === "image") {
+  if (uploadKind === "image") {
     if (!object.contentType?.startsWith("image/")) {
       return rejectInvalidUpload(userId, key);
     }
@@ -177,16 +179,23 @@ export async function createItem(
   }
 
   const isPro = await getUserIsPro(userId);
-  const usesFileContent = isProOnlyItemType(parsed.data.type);
+  const itemType = await getItemTypeBySlug(userId, parsed.data.type);
+
+  if (!itemType) {
+    return { success: false, error: "Invalid item type" };
+  }
+
+  const usesFileContent =
+    itemType.kind === "file" || itemType.kind === "image";
 
   if (!usesFileContent) {
-    const created = await executeCreateTextItem(userId, parsed.data);
+    const created = await executeCreateTextItem(userId, parsed.data, itemType);
 
     if (!created.success) {
       return { success: false, error: created.message };
     }
 
-    revalidatePath(`/items/${getTypeSlug(parsed.data.type)}`);
+    revalidatePath(`/items/${itemType.slug}`);
     revalidatePath("/dashboard");
 
     return { success: true, data: created.data };
@@ -199,15 +208,15 @@ export async function createItem(
     };
   }
 
-  const itemType = await getItemTypeBySlug(userId, parsed.data.type);
-
-  if (!itemType) {
-    return { success: false, error: "Invalid item type" };
-  }
   let uploadedFile: UploadedFile | null = null;
 
   if (usesFileContent) {
-    const fileResult = await resolveUploadedFile(userId, parsed.data, isPro);
+    const fileResult = await resolveUploadedFile(
+      userId,
+      parsed.data,
+      normalizeItemTypeKind(itemType.kind),
+      isPro,
+    );
 
     if (!fileResult.success) {
       return fileResult;
@@ -264,7 +273,7 @@ export async function createItem(
     throw error;
   }
 
-  revalidatePath(`/items/${getTypeSlug(parsed.data.type)}`);
+  revalidatePath(`/items/${itemType.slug}`);
   revalidatePath("/dashboard");
 
   return { success: true, data: created };

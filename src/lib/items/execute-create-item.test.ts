@@ -38,6 +38,9 @@ describe("executeCreateTextItem", () => {
     mockGetItemTypeBySlug.mockResolvedValue({
       id: "type-1",
       name: "snippet",
+      kind: "code",
+      slug: "snippet",
+      isSystem: true,
       icon: null,
       color: null,
     });
@@ -75,5 +78,56 @@ describe("executeCreateTextItem", () => {
     if (!result.success) {
       expect(result.kind).toBe("invalid_collections");
     }
+  });
+
+  it("returns pro_required for custom types when user is not Pro", async () => {
+    mockGetUserIsPro.mockResolvedValue(false);
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-custom",
+      name: "Runbooks",
+      kind: "markdown",
+      slug: "runbooks",
+      isSystem: false,
+      icon: null,
+      color: null,
+    });
+
+    const result = await executeCreateTextItem("user-1", {
+      type: "runbooks",
+      title: "x",
+      tags: [],
+      collectionIds: [],
+    });
+
+    expect(result).toEqual({
+      success: false,
+      kind: "pro_required",
+      message: "Creating items in custom types requires a Pro subscription",
+    });
+  });
+
+  it("requires URL for custom link kinds", async () => {
+    mockGetItemTypeBySlug.mockResolvedValue({
+      id: "type-link",
+      name: "Bookmarks",
+      kind: "link",
+      slug: "bookmarks",
+      isSystem: false,
+      icon: null,
+      color: null,
+    });
+
+    const result = await executeCreateTextItem("user-1", {
+      type: "bookmarks",
+      title: "Example",
+      tags: [],
+      collectionIds: [],
+    });
+
+    expect(result).toEqual({
+      success: false,
+      kind: "invalid_type",
+      message: "URL is required",
+    });
   });
 });

@@ -3,7 +3,10 @@
 import { createElement, useState } from "react";
 import type { DashboardItem } from "@/lib/db/items";
 import { formatFileSize } from "@/lib/file-upload";
-import { getItemPreviewLineClamp } from "@/lib/item-preview";
+import {
+  getItemPreviewLineClamp,
+  resolvePreviewKind,
+} from "@/lib/item-preview";
 import { getItemTypeIcon } from "@/lib/item-type-styles";
 import { cn } from "@/lib/utils";
 import { useShowLinkFavicons } from "@/components/user-preferences/user-preferences-context";
@@ -51,9 +54,9 @@ function LinkPreview({ item }: { item: DashboardItem }) {
 }
 
 export function ItemCardPreview({ item, className }: ItemCardPreviewProps) {
-  const typeName = item.type.name.toLowerCase();
+  const kind = resolvePreviewKind(item.type);
 
-  if (typeName === "image") {
+  if (kind === "image") {
     return (
       <div
         className={cn(
@@ -72,11 +75,11 @@ export function ItemCardPreview({ item, className }: ItemCardPreviewProps) {
     );
   }
 
-  if (!item.preview && typeName !== "file") {
+  if (!item.preview && kind !== "file") {
     return null;
   }
 
-  if (typeName === "link") {
+  if (kind === "link") {
     return (
       <div className={cn("mt-3 min-w-0", className)}>
         <LinkPreview item={item} />
@@ -84,7 +87,7 @@ export function ItemCardPreview({ item, className }: ItemCardPreviewProps) {
     );
   }
 
-  if (typeName === "file") {
+  if (kind === "file") {
     return (
       <div
         className={cn(
@@ -101,8 +104,8 @@ export function ItemCardPreview({ item, className }: ItemCardPreviewProps) {
     );
   }
 
-  const lineClamp = getItemPreviewLineClamp(typeName);
-  const isMonospace = typeName === "snippet" || typeName === "command";
+  const lineClamp = getItemPreviewLineClamp(kind);
+  const isMonospace = kind === "code";
 
   return (
     <pre

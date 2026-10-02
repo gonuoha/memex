@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useSearchShortcutLabel } from "@/hooks/use-search-shortcut-label";
+import type { ResolvedItemType } from "@/lib/item-types/resolve";
 import type { SelectableCollection } from "@/lib/db/collections";
 import {
   getItemTypeIcon,
@@ -68,11 +69,13 @@ export function TopBar({
   collections,
   itemCount,
   collectionCount,
+  itemTypes,
 }: {
   isPro: boolean;
   collections: SelectableCollection[];
   itemCount: number;
   collectionCount: number;
+  itemTypes: ResolvedItemType[];
 }) {
   const { toggleSidebar } = useSidebar();
   const pathname = usePathname();
@@ -152,7 +155,7 @@ export function TopBar({
                 style: styles.textStyle,
               })}
               <span className="flex-1">
-                {getItemTypeLabel(type, { plural: false })}
+                {getItemTypeLabel(type, { plural: false, isSystem: true })}
               </span>
               <span className="text-xs text-muted-foreground tabular-nums">
                 g {typeIndex + 1}
@@ -307,6 +310,7 @@ export function TopBar({
         itemCount={itemCount}
         defaultType={createType ?? defaultType}
         collections={collections}
+        itemTypes={itemTypes}
       />
 
       <UpgradePrompt

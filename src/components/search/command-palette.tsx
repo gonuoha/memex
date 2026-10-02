@@ -150,7 +150,9 @@ function ItemSearchResultRow({
         ) : null}
       </div>
       <span className="shrink-0 text-xs text-muted-foreground">
-        {getItemTypeLabel(item.type.name)}
+        {getItemTypeLabel(item.type.name, {
+          isSystem: item.type.isSystem,
+        })}
       </span>
     </CommandItem>
   );

@@ -8,13 +8,13 @@ const DEMO_USER_ID = "user-demo";
 const DEMO_EMAIL = "demo@memex.io";
 
 const systemItemTypes = [
-  { id: "type-snippet", name: "snippet", icon: "Code", color: "#4DA3E8" },
-  { id: "type-prompt", name: "prompt", icon: "Sparkles", color: "#9B8AFB" },
-  { id: "type-command", name: "command", icon: "Terminal", color: "#E8944A" },
-  { id: "type-note", name: "note", icon: "StickyNote", color: "#D4B84A" },
-  { id: "type-file", name: "file", icon: "File", color: "#7B8A9A" },
-  { id: "type-image", name: "image", icon: "Image", color: "#D46BA8" },
-  { id: "type-link", name: "link", icon: "Link", color: "#3DB88A" },
+  { id: "type-snippet", name: "snippet", icon: "Code", color: "#4DA3E8", kind: "code" },
+  { id: "type-prompt", name: "prompt", icon: "Sparkles", color: "#9B8AFB", kind: "markdown" },
+  { id: "type-command", name: "command", icon: "Terminal", color: "#E8944A", kind: "code" },
+  { id: "type-note", name: "note", icon: "StickyNote", color: "#D4B84A", kind: "markdown" },
+  { id: "type-file", name: "file", icon: "File", color: "#7B8A9A", kind: "file" },
+  { id: "type-image", name: "image", icon: "Image", color: "#D46BA8", kind: "image" },
+  { id: "type-link", name: "link", icon: "Link", color: "#3DB88A", kind: "link" },
 ] as const;
 
 const collections = [
@@ -346,6 +346,7 @@ async function main() {
           name: itemType.name,
           icon: itemType.icon,
           color: itemType.color,
+          kind: itemType.kind,
           isSystem: true,
           userId: null,
         },
@@ -354,6 +355,7 @@ async function main() {
           name: itemType.name,
           icon: itemType.icon,
           color: itemType.color,
+          kind: itemType.kind,
           isSystem: true,
         },
       });

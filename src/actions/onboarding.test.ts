@@ -81,11 +81,11 @@ describe("onboarding actions", () => {
       userId: "user-1",
     });
     mockGetSystemItemTypes.mockResolvedValue([
-      { id: "t1", name: "snippet", icon: "Code", color: null },
-      { id: "t2", name: "command", icon: "Terminal", color: null },
-      { id: "t3", name: "prompt", icon: "Sparkles", color: null },
-      { id: "t4", name: "note", icon: "StickyNote", color: null },
-      { id: "t5", name: "link", icon: "Link", color: null },
+      { id: "t1", name: "snippet", kind: "code", slug: "snippets", isSystem: true, icon: "Code", color: null },
+      { id: "t2", name: "command", kind: "code", slug: "commands", isSystem: true, icon: "Terminal", color: null },
+      { id: "t3", name: "prompt", kind: "markdown", slug: "prompts", isSystem: true, icon: "Sparkles", color: null },
+      { id: "t4", name: "note", kind: "markdown", slug: "notes", isSystem: true, icon: "StickyNote", color: null },
+      { id: "t5", name: "link", kind: "link", slug: "links", isSystem: true, icon: "Link", color: null },
     ]);
     mockCreateCollection.mockResolvedValue({
       id: "col-1",

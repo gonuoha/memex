@@ -179,10 +179,10 @@ describe("createItemSchema", () => {
 });
 
 describe("parseCreatableItemTypeFromPathname", () => {
-  it("returns the item type from an items page path", () => {
+  it("returns the item type slug from an items page path", () => {
     expect(parseCreatableItemTypeFromPathname("/items/prompt")).toBe("prompt");
-    expect(parseCreatableItemTypeFromPathname("/items/prompts")).toBe("prompt");
-    expect(parseCreatableItemTypeFromPathname("/items/links")).toBe("link");
+    expect(parseCreatableItemTypeFromPathname("/items/prompts")).toBe("prompts");
+    expect(parseCreatableItemTypeFromPathname("/items/links")).toBe("links");
   });
 
   it("returns undefined for non-item paths", () => {

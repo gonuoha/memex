@@ -8,11 +8,13 @@ import { AppearanceSync } from "@/components/theme/appearance-sync";
 import { UserPreferencesProvider } from "@/components/user-preferences/user-preferences-context";
 import { CommandPalette } from "@/components/search/command-palette";
 import { CommandPaletteProvider } from "@/components/search/command-palette-context";
+import type { ResolvedItemType } from "@/lib/item-types/types";
 import type { SelectableCollection } from "@/lib/db/collections";
 import type { EditorPreferences } from "@/lib/editor-preferences";
 import type { UserPreferences } from "@/lib/user-preferences";
 import { cn } from "@/lib/utils";
 
+import { ItemTypesProvider } from "@/components/items/item-types-context";
 import { AppKeyboardShortcutsRoot } from "@/components/shortcuts/keyboard-shortcuts-provider";
 
 import { TopBar } from "./top-bar";
@@ -25,6 +27,7 @@ function DashboardShellInner({
   collections,
   itemCount,
   collectionCount,
+  itemTypes,
 }: {
   children: React.ReactNode;
   sidebar: React.ReactNode;
@@ -32,6 +35,7 @@ function DashboardShellInner({
   collections: SelectableCollection[];
   itemCount: number;
   collectionCount: number;
+  itemTypes: ResolvedItemType[];
 }) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar();
 
@@ -42,6 +46,7 @@ function DashboardShellInner({
         collections={collections}
         itemCount={itemCount}
         collectionCount={collectionCount}
+        itemTypes={itemTypes}
       />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -87,6 +92,7 @@ export function DashboardShell({
   userPreferences,
   itemCount,
   collectionCount,
+  itemTypes,
 }: {
   children: React.ReactNode;
   sidebar: React.ReactNode;
@@ -96,6 +102,7 @@ export function DashboardShell({
   userPreferences: UserPreferences;
   itemCount: number;
   collectionCount: number;
+  itemTypes: ResolvedItemType[];
 }) {
   return (
     <SidebarProvider>
@@ -104,17 +111,20 @@ export function DashboardShell({
         <UserPreferencesProvider initialPreferences={userPreferences}>
           <EditorPreferencesProvider initialPreferences={editorPreferences}>
             <CommandPaletteProvider>
-              <AppKeyboardShortcutsRoot isPro={isPro}>
-                <DashboardShellInner
-                  sidebar={sidebar}
-                  isPro={isPro}
-                  collections={collections}
-                  itemCount={itemCount}
-                  collectionCount={collectionCount}
-                >
-                  {children}
-                </DashboardShellInner>
-              </AppKeyboardShortcutsRoot>
+              <ItemTypesProvider itemTypes={itemTypes}>
+                <AppKeyboardShortcutsRoot isPro={isPro}>
+                  <DashboardShellInner
+                    sidebar={sidebar}
+                    isPro={isPro}
+                    collections={collections}
+                    itemCount={itemCount}
+                    collectionCount={collectionCount}
+                    itemTypes={itemTypes}
+                  >
+                    {children}
+                  </DashboardShellInner>
+                </AppKeyboardShortcutsRoot>
+              </ItemTypesProvider>
             </CommandPaletteProvider>
           </EditorPreferencesProvider>
         </UserPreferencesProvider>

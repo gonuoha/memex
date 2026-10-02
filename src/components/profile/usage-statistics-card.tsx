@@ -109,7 +109,10 @@ export function UsageStatisticsCard({
                   style={styles.textStyle}
                 />
                 <span className="min-w-0 truncate text-sm text-muted-foreground">
-                  {getItemTypeLabel(type.name, { plural: true })}
+                  {getItemTypeLabel(type.name, {
+                    plural: true,
+                    isSystem: type.isSystem,
+                  })}
                 </span>
                 <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums">
                   {type.count}

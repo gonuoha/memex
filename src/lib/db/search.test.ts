@@ -8,18 +8,27 @@ vi.mock("@/lib/prisma", () => ({
     collection: {
       findMany: vi.fn(),
     },
+    itemType: {
+      findFirst: vi.fn(),
+    },
     $queryRaw: vi.fn(),
   },
 }));
 
+vi.mock("@/lib/item-types/resolve", () => ({
+  resolveItemTypeBySlug: vi.fn(),
+}));
+
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { resolveItemTypeBySlug } from "@/lib/item-types/resolve";
 
 import { normalizeSnippet, searchCollections, searchItems } from "./search";
 
 const mockQueryRaw = vi.mocked(prisma.$queryRaw);
 const mockCollectionFindMany = vi.mocked(prisma.collection.findMany);
 const mockItemTagFindMany = vi.mocked(prisma.itemTag.findMany);
+const mockResolveItemTypeBySlug = vi.mocked(resolveItemTypeBySlug);
 
 function lastQuery() {
   const [strings, ...values] = mockQueryRaw.mock.calls.at(-1) ?? [];
@@ -36,6 +45,7 @@ const rawRow = {
   type_name: "snippet",
   type_icon: "Code",
   type_color: "#000",
+  type_is_system: true,
 };
 
 describe("searchItems", () => {
@@ -43,6 +53,7 @@ describe("searchItems", () => {
     vi.clearAllMocks();
     mockItemTagFindMany.mockResolvedValue([]);
     mockQueryRaw.mockResolvedValue([rawRow]);
+    mockResolveItemTypeBySlug.mockResolvedValue(null);
   });
 
   it("lists recent items without text predicates for an empty query", async () => {
@@ -84,12 +95,32 @@ describe("searchItems", () => {
   });
 
   it("applies type aliases and tag filters", async () => {
+    mockResolveItemTypeBySlug.mockResolvedValue({
+      id: "type-link",
+      name: "link",
+      slug: "links",
+      label: "Links",
+      icon: null,
+      color: null,
+      kind: "link",
+      isSystem: true,
+    });
+
     await searchItems("user-1", "type:urls #Docs", { limit: 10 });
     const { sql, values } = lastQuery();
 
-    expect(sql).toContain('lower(it."name") = ANY($2::text[])');
+    expect(sql).toContain('it."id" = $2');
     expect(sql).toContain('lower(t."name") = $3');
-    expect(values).toEqual(["user-1", ["urls", "link", "url"], "docs", 10]);
+    expect(values).toEqual(["user-1", "type-link", "docs", 10]);
+  });
+
+  it("returns null for unknown custom type slugs", async () => {
+    mockResolveItemTypeBySlug.mockResolvedValue(null);
+
+    await searchItems("user-1", "type:someone-elses-slug", { limit: 10 });
+    const { sql } = lastQuery();
+
+    expect(sql).toContain("AND 1 = 0");
   });
 
   it("attaches tags to results", async () => {
