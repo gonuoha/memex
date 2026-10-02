@@ -1,0 +1,119 @@
+Memex License Version 1.0
+===========================
+
+Copyright (c) 2026 Memex Contributors
+
+Acceptance
+----------
+
+By using, copying, modifying, or distributing the Software (defined below), you
+agree to this license. If you do not agree, you may not use the Software.
+
+Definitions
+-----------
+
+"Software" means the Memex source code, object code, documentation, and any
+derivative works you create that are based on or incorporate the Software.
+
+"You" means an individual or a legal entity exercising permissions under this
+license.
+
+"Internal Use" means use of the Software (including deployment on servers you
+control or contract for) solely to support the internal operations, products, or
+services of You or Your Affiliates, where access is limited to Your Personnel
+and not offered to the general public as a standalone product.
+
+"Your Affiliates" means entities that control, are controlled by, or are under
+common control with You, where "control" means ownership of more than fifty
+percent (50%) of voting interests.
+
+"Your Personnel" means Your employees, contractors, and agents acting on Your
+behalf, and personnel of Your Affiliates, in each case solely in connection
+with Internal Use.
+
+"Subscription Service" means making the Software, or a product or service whose
+primary value to users is the functionality of the Software (or substantially
+similar functionality), available to third parties over a network, where:
+
+  (a) access is provided on a multi-tenant or shared hosted basis; or
+
+  (b) access is conditioned on payment, a recurring fee, or registration as a
+      customer of a commercial offering whose main purpose is to provide that
+      functionality to those third parties;
+
+whether or not the Software is modified, rebranded, or combined with other
+software. Offering the Software solely for Internal Use is not a Subscription
+Service.
+
+Grant of Rights
+---------------
+
+Subject to the limitations below, the copyright holders grant You a worldwide,
+non-exclusive, royalty-free copyright license to:
+
+  1. use and run the Software for Internal Use;
+
+  2. copy and modify the Software for Internal Use;
+
+  3. create derivative works of the Software for Internal Use;
+
+  4. distribute copies of the Software or Your derivative works, provided that
+     You do so only under this license and include a copy of this license with
+     each distribution.
+
+Limitations
+-----------
+
+1. **No Subscription Service.** You may not operate a Subscription Service. You
+   may not assist or enable a third party to operate a Subscription Service
+   using the Software or Your derivative works.
+
+   This limitation does not prevent You from using the Software internally to
+   store or manage Your organization's own knowledge, or from deploying
+   dedicated instances for a single customer where that customer uses the
+   deployment only for its own Internal Use (for example, a consultancy
+   delivering a private instance to one client for the client's employees).
+
+2. **License notice.** You must not remove or alter copyright notices or this
+   license in distributions You make.
+
+3. **No trademark license.** This license does not grant permission to use the
+   trade names, trademarks, service marks, or product names of the copyright
+   holders, except for reasonable and customary use in describing the origin
+   of the Software.
+
+Patents
+-------
+
+To the extent Your contribution or use would necessarily infringe patent claims
+owned by the copyright holders and embodied in the Software, the copyright
+holders grant You a non-exclusive, royalty-free license under those claims to
+make, use, and distribute the Software as permitted above, solely for Internal
+Use and distribution under this license. No other patent rights are granted.
+
+Termination
+-----------
+
+If You violate this license, Your rights under it end automatically. Sections
+that by their nature should survive (including Definitions, Limitations,
+Disclaimer, and Limitation of Liability) survive termination.
+
+Disclaimer
+----------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Limitation of Liability
+-----------------------
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES, OR ANY LOSS OF PROFITS, DATA, OR
+GOODWILL, ARISING FROM YOUR USE OF THE SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGES. THEIR TOTAL LIABILITY FOR ANY CLAIM ARISING OUT OF
+THIS LICENSE SHALL NOT EXCEED ONE HUNDRED U.S. DOLLARS (US $100), EXCEPT WHERE
+PROHIBITED BY LAW.
